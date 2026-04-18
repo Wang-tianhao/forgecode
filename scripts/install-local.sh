@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# install-local.sh — build forge and install it to ~/.local/bin with a
+# valid ad-hoc code signature.
+#
+# Why this exists
+# ---------------
+# On Apple Silicon (arm64), an unsigned or stale-signed Mach-O binary is
+# killed by the kernel with "zsh: killed  forge" (SIGKILL / code-signing
+# enforcement) before `main` ever runs. `cargo build` produces an ad-hoc
+# signature, but a plain `cp` over an existing file can end up with the
+# destination keeping the *old* inode's signature or — worse — being
+# copied in a way that invalidates the signature entirely (e.g. when the
+# destination was previously signed with a different identity, or when
+# copy-on-write metadata gets stale). `install(1)` creates a fresh inode
+# at the destination, and a forced `codesign -f -s -` rewrites the
+# signature in place so the kernel accepts the new bytes.
+#
+# Usage
+# -----
+#   scripts/install-local.sh           # release build → ~/.local/bin/forge
+#   scripts/install-local.sh debug     # debug build   → ~/.local/bin/forge
+#   DEST_DIR=/usr/local/bin scripts/install-local.sh
+#   SKIP_BUILD=1 scripts/install-local.sh   # assume target/release/forge exists
+#
+# Safe to re-run; each invocation re-signs after copy.
+
+set -euo pipefail
+
+PROFILE="${1:-release}"
+DEST_DIR="${DEST_DIR:-$HOME/.local/bin}"
+BIN_NAME="forge"
+
+case "$PROFILE" in
+    release) CARGO_FLAGS=(--release) TARGET_SUBDIR="release" ;;
+    debug)   CARGO_FLAGS=()          TARGET_SUBDIR="debug"   ;;
+    *)
+        echo "error: profile must be 'release' or 'debug' (got: $PROFILE)" >&2
+        exit 2
+        ;;
+esac
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
+DEST_BIN="$DEST_DIR/$BIN_NAME"
+
+if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
+    ( cd "$REPO_ROOT" && cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
+fi
+
+if [[ ! -x "$SRC_BIN" ]]; then
+    echo "error: built binary not found at $SRC_BIN" >&2
+    exit 1
+fi
+
+mkdir -p "$DEST_DIR"
+
+# `install` creates a fresh file at the destination with mode 0755. Unlike
+# `cp`, it does not preserve the source's signed metadata in a way that can
+# confuse the code-signing cache on macOS.
+echo "==> install -m 755 $SRC_BIN -> $DEST_BIN"
+install -m 755 "$SRC_BIN" "$DEST_BIN"
+
+# Re-sign ad-hoc so the kernel's code-signing enforcement accepts the new
+# bytes. `-f` forces replacement of any existing signature; `-s -` uses the
+# ad-hoc signer (no identity), matching what `cargo build` produces on
+# macOS. A missing `codesign` (non-macOS, minimal CI image) is a soft error.
+if command -v codesign >/dev/null 2>&1; then
+    echo "==> codesign -f -s - $DEST_BIN"
+    codesign -f -s - "$DEST_BIN"
+else
+    echo "note: codesign not found, skipping re-sign (non-macOS?)" >&2
+fi
+
+# Quick sanity check: the binary should at minimum respond to --version.
+# Runs the *installed* copy so a broken signature surfaces here, not later.
+if "$DEST_BIN" --version >/dev/null 2>&1; then
+    echo "==> ok: $("$DEST_BIN" --version)"
+else
+    echo "warning: $DEST_BIN --version returned non-zero — check signing/quarantine" >&2
+    exit 1
+fi
