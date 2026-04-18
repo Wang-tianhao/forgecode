@@ -370,12 +370,19 @@ forge config get speed-dial              # list all populated slots
 Once bound, switch the session model instantly:
 
 ```zsh
-:1                        # switch this session to slot 1 (claude-opus)
-:2                        # switch to slot 2 (claude-sonnet)
-:3                        # switch to slot 3 (gpt-5.4)
-:1 explain this diff      # switch to slot 1 AND send the prompt in one go
+:1                        # switch this session to slot 1 (claude-opus) — sticky
+:2                        # switch to slot 2 (claude-sonnet) — sticky
+:3                        # switch to slot 3 (gpt-5.4) — sticky
+:2 explain this diff      # borrow slot 2 for this one turn, then revert — temporary
 :cr                       # reset session back to the globally configured model
 ```
+
+**Sticky vs. temporary.** Bare `:N` is a sticky switch: the session stays on
+slot N until you change it again. `:N <prompt>` is a *temporary override* — it
+snapshots your current session model, quietly swaps to slot N's binding, runs
+the one-shot prompt, and restores your prior model once the agent turn ends
+(even if the agent errors). If you were on slot 1 and type `:2 Hello`, you're
+back on slot 1 as soon as the response finishes.
 
 Slots `1`–`9` are available (nine is plenty); `0` is reserved. Inside the interactive
 `forge` TUI, `/1`…`/9` and `/speed-dial` work the same way. Populated slots are
@@ -447,7 +454,7 @@ After running `:sync`, the AI can search your codebase by meaning rather than ex
 | `:config-model <id>` | `:cm` | Set default model (persistent) |
 | `:reasoning-effort <lvl>` | `:re` | Set reasoning effort for session |
 | `:config-reload` | `:cr` | Reset session overrides to global config |
-| `:1` … `:9` | | Switch session model to speed-dial slot 1..9 (`:1 <prompt>` switches and sends) |
+| `:1` … `:9` | | Sticky switch to speed-dial slot 1..9 (`:N <prompt>` borrows slot N for one turn, then reverts) |
 | `:speed-dial` | `:sd` | Manage speed-dial slot bindings (fzf chooser) |
 | `:info` | `:i` | Show session info |
 | `:sync` | `:workspace-sync` | Index codebase for semantic search |
