@@ -2147,6 +2147,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 let working_dir = self.state.cwd.clone();
                 self.on_index(working_dir, false).await?;
             }
+            AppCommand::SpeedDial { slot, message } => {
+                self.handle_speed_dial_activate(slot, message).await?;
+            }
+            AppCommand::SpeedDialMenu => {
+                self.handle_speed_dial_menu().await?;
+            }
             AppCommand::AgentSwitch(agent_id) => {
                 // Validate that the agent exists by checking against loaded agents
                 let agents = self.api.get_agent_infos().await?;
@@ -4451,6 +4457,23 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         }
 
         Ok(())
+    }
+
+    /// Activate a speed-dial slot — wired up in the next commit. This stub
+    /// keeps the `AppCommand::SpeedDial` match arm compiling while the full
+    /// handler (model switch + optional one-shot prompt) lands separately.
+    async fn handle_speed_dial_activate(
+        &mut self,
+        _slot: u8,
+        _message: Option<String>,
+    ) -> Result<()> {
+        anyhow::bail!("speed-dial activate not yet wired up")
+    }
+
+    /// Show the configured speed-dial bindings — stub wired up in the next
+    /// commit.
+    async fn handle_speed_dial_menu(&mut self) -> Result<()> {
+        anyhow::bail!("speed-dial menu not yet wired up")
     }
 
     /// Handle prompt command - returns model and conversation stats for shell
