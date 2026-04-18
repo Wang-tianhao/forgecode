@@ -4459,21 +4459,63 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         Ok(())
     }
 
-    /// Activate a speed-dial slot — wired up in the next commit. This stub
-    /// keeps the `AppCommand::SpeedDial` match arm compiling while the full
-    /// handler (model switch + optional one-shot prompt) lands separately.
+    /// Activate a speed-dial slot by applying its bound provider/model,
+    /// optionally forwarding a trailing prompt to the active agent.
     async fn handle_speed_dial_activate(
         &mut self,
-        _slot: u8,
-        _message: Option<String>,
+        slot: u8,
+        message: Option<String>,
     ) -> Result<()> {
-        anyhow::bail!("speed-dial activate not yet wired up")
+        if !forge_config::is_valid_speed_dial_slot(slot) {
+            anyhow::bail!(
+                "Speed-dial slot {} is out of range (allowed: 1..=9)",
+                slot
+            );
+        }
+        let speed_dial = self.api.get_speed_dial().await?;
+        let entry = match speed_dial.get(slot) {
+            Some(e) => e.clone(),
+            None => {
+                self.writeln_title(
+                    TitleFormat::info(format!("Speed-dial slot {slot} is not set"))
+                        .sub_title("bind it with `forge config set speed-dial <N> <provider> <model>`"),
+                )?;
+                return Ok(());
+            }
+        };
+
+        let provider_id: forge_domain::ProviderId = entry.provider_id.clone().into();
+        let model_id = forge_domain::ModelId::new(entry.model_id.as_str());
+        let any_provider = self.api.get_provider(&provider_id).await?;
+        self.activate_provider_with_model(any_provider, Some(model_id))
+            .await?;
+
+        if let Some(prompt) = message.filter(|s| !s.trim().is_empty()) {
+            self.spinner.start(None)?;
+            self.on_message(Some(prompt)).await?;
+        }
+        Ok(())
     }
 
-    /// Show the configured speed-dial bindings — stub wired up in the next
-    /// commit.
+    /// Show the configured speed-dial bindings.
     async fn handle_speed_dial_menu(&mut self) -> Result<()> {
-        anyhow::bail!("speed-dial menu not yet wired up")
+        let speed_dial = self.api.get_speed_dial().await?;
+        if speed_dial.is_empty() {
+            self.writeln_title(
+                TitleFormat::info("Speed Dial")
+                    .sub_title("no slots configured — use `forge config set speed-dial <N> <provider> <model>`"),
+            )?;
+            return Ok(());
+        }
+
+        self.writeln_title(TitleFormat::info("Speed Dial"))?;
+        for (n, entry) in speed_dial.iter() {
+            self.writeln(format!(
+                "  /{}  {}/{}",
+                n, entry.provider_id, entry.model_id
+            ))?;
+        }
+        Ok(())
     }
 
     /// Handle prompt command - returns model and conversation stats for shell
