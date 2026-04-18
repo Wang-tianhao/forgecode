@@ -350,16 +350,29 @@ impl ForgeCommandManager {
         let argv: Vec<&str> = std::iter::once(bare).chain(rest.iter().copied()).collect();
         let parameters: Vec<String> = rest.iter().map(|s| s.to_string()).collect();
 
-        // Speed-dial slot shortcut: `/1`..`/9` (or `:1`..`:9`).
+        // Speed-dial is slash-only inside the forge REPL. The colon namespace
+        // (`:1`..`:9`, `:speed-dial`, `:sd`) is owned by the zsh plugin's
+        // dispatcher — having forge match it too would give the same token
+        // two different behaviours depending on which context you're typing
+        // in. Anything colon-prefixed in this set falls through as a plain
+        // message so zsh-habituated users don't silently get a different
+        // outcome inside the TUI.
+        let bare_bytes = bare.as_bytes();
+        let is_slot_digit = bare_bytes.len() == 1 && matches!(bare_bytes[0], b'1'..=b'9');
+        let is_speed_dial_menu = bare == "speed-dial" || bare == "sd";
+        if command_prefix == ':' && (is_slot_digit || is_speed_dial_menu) {
+            return Ok(AppCommand::Message(input.to_string()));
+        }
+
+        // Speed-dial slot shortcut: `/1`..`/9`.
         //
         // Must match strictly — the bare command has to be exactly a single
         // digit `1`..`9`. Any other digit-led token (`10`, `0`, `12abc`,
         // `1x`, …) falls through to `AppCommand::Message` so existing chat
-        // inputs that happen to start with `/` or `:` and a digit keep
-        // working. Clap can't express a digit-only subcommand, so the hook
-        // lives here and runs before `ClapCmd::try_parse_from`.
-        let bare_bytes = bare.as_bytes();
-        if bare_bytes.len() == 1 && matches!(bare_bytes[0], b'1'..=b'9') {
+        // inputs that happen to start with `/` and a digit keep working.
+        // Clap can't express a digit-only subcommand, so the hook lives
+        // here and runs before `ClapCmd::try_parse_from`.
+        if is_slot_digit {
             let slot = bare_bytes[0] - b'0';
             let message = if parameters.is_empty() {
                 None
@@ -1773,6 +1786,36 @@ mod tests {
             AppCommand::SpeedDialMenu
         );
         assert_eq!(fixture.parse("/sd").unwrap(), AppCommand::SpeedDialMenu);
+    }
+
+    #[test]
+    fn test_parse_speed_dial_colon_prefix_falls_through_as_message() {
+        // The colon namespace (`:1..:9`, `:speed-dial`, `:sd`) belongs to the
+        // zsh dispatcher. Inside the forge REPL those tokens must not
+        // activate speed-dial — they fall through to `Message` so there's no
+        // same-token/different-behaviour split between shell and TUI.
+        let fixture = ForgeCommandManager::default();
+        for slot in 1u8..=9 {
+            let input = format!(":{slot}");
+            let actual = fixture.parse(&input).unwrap();
+            assert_eq!(actual, AppCommand::Message(input));
+        }
+        assert_eq!(
+            fixture.parse(":2 explain this").unwrap(),
+            AppCommand::Message(":2 explain this".to_string())
+        );
+        assert_eq!(
+            fixture.parse(":speed-dial").unwrap(),
+            AppCommand::Message(":speed-dial".to_string())
+        );
+        assert_eq!(
+            fixture.parse(":sd").unwrap(),
+            AppCommand::Message(":sd".to_string())
+        );
+        assert_eq!(
+            fixture.parse(":sd 3 --clear").unwrap(),
+            AppCommand::Message(":sd 3 --clear".to_string())
+        );
     }
 
     #[test]
