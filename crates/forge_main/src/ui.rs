@@ -1020,7 +1020,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         };
 
         // Set as default and handle model selection
-        self.finalize_provider_activation(provider, None).await
+        self.finalize_provider_activation(provider, None, false).await
     }
 
     async fn handle_provider_logout(
@@ -3465,16 +3465,21 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
     /// Activates a provider by configuring it if needed, setting it as default,
     /// and ensuring a compatible model is selected.
     async fn activate_provider(&mut self, any_provider: AnyProvider) -> Result<()> {
-        self.activate_provider_with_model(any_provider, None).await
+        self.activate_provider_with_model(any_provider, None, false).await
     }
 
     /// Activates a provider with an optional pre-selected model.
     /// When `model` is provided, the interactive model selection prompt is
     /// skipped and the specified model is set directly.
+    ///
+    /// When `quiet` is true, the "X is now the default provider/model" banners
+    /// are suppressed. Used by speed-dial temporary overrides to avoid noisy
+    /// single-turn output.
     async fn activate_provider_with_model(
         &mut self,
         any_provider: AnyProvider,
         model: Option<ModelId>,
+        quiet: bool,
     ) -> Result<()> {
         // Trigger authentication for the selected provider only if not configured
         let provider = if !any_provider.is_configured() {
@@ -3494,17 +3499,21 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         };
 
         // Set as default and handle model selection
-        self.finalize_provider_activation(provider, model).await
+        self.finalize_provider_activation(provider, model, quiet).await
     }
 
     /// Finalizes provider activation by setting it as default and ensuring
     /// a compatible model is selected.
     /// When `model` is `Some`, the interactive model selection is skipped and
     /// the provided model is validated and set directly.
+    ///
+    /// When `quiet` is true, the "is now the default provider/model" banners
+    /// are suppressed.
     async fn finalize_provider_activation(
         &mut self,
         provider: Provider<Url>,
         model: Option<ModelId>,
+        quiet: bool,
     ) -> Result<()> {
         // If a model was pre-selected (e.g. from :model), validate and set it
         // directly without prompting
@@ -3517,13 +3526,15 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                     forge_domain::ModelConfig::new(provider.id.clone(), model_id.clone()),
                 )])
                 .await?;
-            self.writeln_title(
-                TitleFormat::action(format!("{}", provider.id))
-                    .sub_title("is now the default provider"),
-            )?;
-            self.writeln_title(
-                TitleFormat::action(model_id.as_str()).sub_title("is now the default model"),
-            )?;
+            if !quiet {
+                self.writeln_title(
+                    TitleFormat::action(format!("{}", provider.id))
+                        .sub_title("is now the default provider"),
+                )?;
+                self.writeln_title(
+                    TitleFormat::action(model_id.as_str()).sub_title("is now the default model"),
+                )?;
+            }
             return Ok(());
         }
 
@@ -3563,10 +3574,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 )])
                 .await?;
 
-            self.writeln_title(
-                TitleFormat::action(format!("{}", provider.id))
-                    .sub_title("is now the default provider"),
-            )?;
+            if !quiet {
+                self.writeln_title(
+                    TitleFormat::action(format!("{}", provider.id))
+                        .sub_title("is now the default provider"),
+                )?;
+            }
         }
 
         Ok(())
@@ -4259,7 +4272,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         match args.field {
             ConfigSetField::Model { provider, model } => {
                 let provider = self.api.get_provider(&provider).await?;
-                self.activate_provider_with_model(provider, Some(model))
+                self.activate_provider_with_model(provider, Some(model), false)
                     .await?;
             }
             ConfigSetField::Commit { provider, model } => {
@@ -4487,12 +4500,45 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         let provider_id: forge_domain::ProviderId = entry.provider_id.clone().into();
         let model_id = forge_domain::ModelId::new(entry.model_id.as_str());
         let any_provider = self.api.get_provider(&provider_id).await?;
-        self.activate_provider_with_model(any_provider, Some(model_id))
-            .await?;
 
-        if let Some(prompt) = message.filter(|s| !s.trim().is_empty()) {
-            self.spinner.start(None)?;
-            self.on_message(Some(prompt)).await?;
+        let prompt = message.and_then(|s| {
+            let t = s.trim().to_string();
+            if t.is_empty() { None } else { Some(t) }
+        });
+
+        match prompt {
+            // Bare :N — permanent switch, loud banners. Same as before.
+            None => {
+                self.activate_provider_with_model(any_provider, Some(model_id), false)
+                    .await?;
+            }
+            // :N <prompt> — temporary override. Snapshot current session
+            // config, quietly switch to slot N, run the one-shot, then always
+            // restore (even on agent error). If prior state had no override,
+            // restore via ClearSessionConfig rather than a concrete model.
+            Some(prompt) => {
+                let prev = self.api.get_session_config().await;
+
+                self.activate_provider_with_model(any_provider, Some(model_id), true)
+                    .await?;
+                self.writeln_title(TitleFormat::info(format!("↻ slot {slot} (temporary)")))?;
+
+                self.spinner.start(None)?;
+                let turn_result = self.on_message(Some(prompt)).await;
+
+                let restore_op = match prev {
+                    Some(mc) => ConfigOperation::SetSessionConfig(mc),
+                    None => ConfigOperation::ClearSessionConfig,
+                };
+                let restore_result = self.api.update_config(vec![restore_op]).await;
+
+                if restore_result.is_ok() {
+                    self.writeln_title(TitleFormat::info("↻ restored"))?;
+                }
+
+                turn_result?;
+                restore_result?;
+            }
         }
         Ok(())
     }
