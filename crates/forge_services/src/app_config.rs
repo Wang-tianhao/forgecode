@@ -190,6 +190,9 @@ mod tests {
                             let mid_str = mc.model.to_string();
                             config.session = Some(ModelConfig::new(pid_str, mid_str));
                         }
+                        ConfigOperation::ClearSessionConfig => {
+                            config.session = None;
+                        }
                         ConfigOperation::SetCommitConfig(mc) => {
                             config.commit = mc.map(|m| {
                                 ModelConfig::new(

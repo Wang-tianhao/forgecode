@@ -20,6 +20,10 @@ pub enum ConfigOperation {
     /// session (provider + model) is replaced atomically. When they match only
     /// the model field is updated.
     SetSessionConfig(ModelConfig),
+    /// Clear the active session provider/model, reverting the session to its
+    /// global-config default. Used by temporary overrides (e.g. the one-shot
+    /// form of speed dial) to restore a prior "no override" snapshot.
+    ClearSessionConfig,
     /// Set the commit-message generation configuration.
     ///
     /// `None` clears the commit configuration so the active session

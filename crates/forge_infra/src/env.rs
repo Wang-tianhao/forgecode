@@ -37,6 +37,9 @@ fn apply_config_op(fc: &mut ForgeConfig, op: ConfigOperation) {
             let mid_str = mc.model.to_string();
             fc.session = Some(ModelConfig { provider_id: pid_str, model_id: mid_str });
         }
+        ConfigOperation::ClearSessionConfig => {
+            fc.session = None;
+        }
         ConfigOperation::SetCommitConfig(mc) => {
             fc.commit = mc.map(|m| ModelConfig {
                 provider_id: m.provider.as_ref().to_string(),
@@ -297,6 +300,32 @@ mod tests {
 
         assert_eq!(actual_provider, Some("anthropic"));
         assert_eq!(actual_model, Some("claude-3-5-sonnet-20241022"));
+    }
+
+    #[test]
+    fn test_apply_config_op_clear_session_config_removes_existing() {
+        use forge_config::ModelConfig as ForgeCfgModelConfig;
+
+        let mut fixture = ForgeConfig {
+            session: Some(ForgeCfgModelConfig {
+                provider_id: "openai".to_string(),
+                model_id: "gpt-4".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        apply_config_op(&mut fixture, ConfigOperation::ClearSessionConfig);
+
+        assert!(fixture.session.is_none());
+    }
+
+    #[test]
+    fn test_apply_config_op_clear_session_config_on_empty_is_noop() {
+        let mut fixture = ForgeConfig::default();
+
+        apply_config_op(&mut fixture, ConfigOperation::ClearSessionConfig);
+
+        assert!(fixture.session.is_none());
     }
 
     #[test]
