@@ -352,14 +352,22 @@ function _forge_action_session_model() {
 # Action handler: Switch the session model to a speed-dial slot.
 #
 # Resolves slot number `$1` via `forge config get speed-dial-slot <N>`, which
-# prints `provider_id<TAB>model_id` on a single line. Sets the same shell
-# session overrides used by `_forge_action_session_model` so that subsequent
-# forge invocations run with the bound model + provider without touching
-# global config. `:cr` (config-reload) clears these as usual.
+# prints `provider_id<TAB>model_id` on a single line.
 #
-# If `$2` (input_text) is non-empty the call doubles as a one-shot: the
-# session model is switched and the prompt is immediately dispatched to the
-# active agent, mirroring the default-action prompt path.
+# Two modes, mirroring the forge-REPL behaviour of `/N` vs `/N <prompt>`:
+#
+#   :N                — sticky switch. Sets `_FORGE_SESSION_MODEL` and
+#                       `_FORGE_SESSION_PROVIDER` so every subsequent forge
+#                       invocation in this shell uses the bound model +
+#                       provider. `:cr` clears the overrides.
+#   :N <prompt>       — temporary override. Snapshot the current session
+#                       overrides, swap to slot N for *this one turn*, dispatch
+#                       the prompt, then restore the snapshot. If the previous
+#                       state had no overrides (empty strings), restoration
+#                       clears them, returning to global-config fallback.
+#                       Restoration runs via zsh's `always` block so it
+#                       executes even if forge exits non-zero or the turn is
+#                       interrupted.
 function _forge_action_speed_dial() {
     local slot="$1"
     local input_text="$2"
@@ -383,22 +391,40 @@ function _forge_action_speed_dial() {
         return 0
     fi
 
+    # Sticky path: no trailing prompt, slot becomes the new session default.
+    if [[ -z "$input_text" ]]; then
+        _FORGE_SESSION_MODEL="$model_id"
+        _FORGE_SESSION_PROVIDER="$provider_id"
+        _forge_log success "Speed-dial \033[1m${slot}\033[0m → \033[1m${model_id}\033[0m (provider: \033[1m${provider_id}\033[0m)"
+        return 0
+    fi
+
+    # Temporary override path: snapshot → apply → run → restore.
+    local prev_model="$_FORGE_SESSION_MODEL"
+    local prev_provider="$_FORGE_SESSION_PROVIDER"
+
     _FORGE_SESSION_MODEL="$model_id"
     _FORGE_SESSION_PROVIDER="$provider_id"
 
-    _forge_log success "Speed-dial \033[1m${slot}\033[0m → \033[1m${model_id}\033[0m (provider: \033[1m${provider_id}\033[0m)"
+    _forge_log info "Speed-dial \033[1m${slot}\033[0m → \033[1m${model_id}\033[0m (temporary)"
 
-    # One-shot: switch-and-send. Mirrors `_forge_action_default`'s prompt path.
-    if [[ -n "$input_text" ]]; then
-        if [[ -z "$_FORGE_CONVERSATION_ID" ]]; then
-            local new_id=$($_FORGE_BIN conversation new)
-            _FORGE_CONVERSATION_ID="$new_id"
-        fi
-        echo
-        _forge_exec_interactive -p "$input_text" --cid "$_FORGE_CONVERSATION_ID"
-        _forge_start_background_sync
-        _forge_start_background_update
+    if [[ -z "$_FORGE_CONVERSATION_ID" ]]; then
+        local new_id=$($_FORGE_BIN conversation new)
+        _FORGE_CONVERSATION_ID="$new_id"
     fi
+    echo
+
+    {
+        _forge_exec_interactive -p "$input_text" --cid "$_FORGE_CONVERSATION_ID"
+    } always {
+        _FORGE_SESSION_MODEL="$prev_model"
+        _FORGE_SESSION_PROVIDER="$prev_provider"
+    }
+
+    _forge_log info "Speed-dial restored"
+
+    _forge_start_background_sync
+    _forge_start_background_update
 }
 
 # Action handler: Manage speed-dial bindings.
