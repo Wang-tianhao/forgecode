@@ -49,7 +49,7 @@ custom code lives on **`wang/main`**; `main` stays synced with upstream.
 `.github/workflows/release.yml` has been customized for this fork:
 
 - **Triggers**: `release: published` (auto) + `workflow_dispatch` (manual, for forks where the release event may not fire).
-- **Matrix**: macOS only — `x86_64-apple-darwin` + `aarch64-apple-darwin`.
+- **Matrix**: macOS arm64 only — `aarch64-apple-darwin`.
 - **No npm/homebrew jobs** (removed — they require upstream secrets).
 
 ### How to publish a new release
@@ -74,11 +74,6 @@ gh workflow run release.yml --ref wang/main -f tag=v0.1.0-custom.N
 # macOS Apple Silicon (M-series)
 curl -fLo ~/.local/bin/forge \
   https://github.com/Wang-tianhao/forgecode/releases/download/v0.1.0-custom.N/forge-aarch64-apple-darwin
-chmod +x ~/.local/bin/forge
-
-# macOS Intel
-curl -fLo ~/.local/bin/forge \
-  https://github.com/Wang-tianhao/forgecode/releases/download/v0.1.0-custom.N/forge-x86_64-apple-darwin
 chmod +x ~/.local/bin/forge
 ```
 
