@@ -31,3 +31,63 @@ What it guarantees (do **not** replace it with a plain `cp`):
 plugin source requires rebuilding the binary. After rebuild + install,
 reload with `exec zsh` (or `source ~/.zshrc`) to pick up the new plugin in
 an already-open shell.
+
+## Custom Release Builds via GitHub Releases
+
+This is a **fork** (`Wang-tianhao/forgecode`) of the upstream repo. The
+custom code lives on **`wang/main`**; `main` stays synced with upstream.
+
+### Branch layout
+
+| Branch | Purpose |
+|---|---|
+| `main` | Mirror of upstream `tailcallhq/forgecode` main — never commit here |
+| `wang/main` | All custom changes — also the repo's **default branch** |
+
+### Release workflow
+
+`.github/workflows/release.yml` has been customized for this fork:
+
+- **Triggers**: `release: published` (auto) + `workflow_dispatch` (manual, for forks where the release event may not fire).
+- **Matrix**: macOS only — `x86_64-apple-darwin` + `aarch64-apple-darwin`.
+- **No npm/homebrew jobs** (removed — they require upstream secrets).
+
+### How to publish a new release
+
+```bash
+# 1. Make changes on wang/main and push
+git push origin wang/main
+
+# 2. Create a GitHub release (may auto-trigger the workflow)
+gh release create v0.1.0-custom.N \
+  --title "v0.1.0-custom.N" \
+  --notes "What changed" \
+  --target wang/main
+
+# 3. If the workflow didn't auto-trigger, run it manually:
+gh workflow run release.yml --ref wang/main -f tag=v0.1.0-custom.N
+```
+
+### How to download on a workstation
+
+```bash
+# macOS Apple Silicon (M-series)
+curl -fLo ~/.local/bin/forge \
+  https://github.com/Wang-tianhao/forgecode/releases/download/v0.1.0-custom.N/forge-aarch64-apple-darwin
+chmod +x ~/.local/bin/forge
+
+# macOS Intel
+curl -fLo ~/.local/bin/forge \
+  https://github.com/Wang-tianhao/forgecode/releases/download/v0.1.0-custom.N/forge-x86_64-apple-darwin
+chmod +x ~/.local/bin/forge
+```
+
+### Syncing `main` with upstream
+
+```bash
+git checkout main
+git fetch origin main
+git reset --hard origin/main
+git push origin main --force-with-lease
+git checkout wang/main
+```
