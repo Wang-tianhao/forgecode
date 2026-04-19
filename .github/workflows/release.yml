@@ -20,6 +20,12 @@ name: Multi Channel Release
   release:
     types:
     - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0-custom.1)'
+        required: true
+        type: string
 permissions:
   contents: write
   pull-requests: write
@@ -107,49 +113,24 @@ jobs:
       env:
         RUSTFLAGS: ${{ env.RUSTFLAGS }}
         POSTHOG_API_SECRET: ${{secrets.POSTHOG_API_SECRET}}
-        APP_VERSION: ${{ github.event.release.tag_name }}
+        APP_VERSION: ${{ github.event.release.tag_name || inputs.tag }}
     - name: Copy Binary
       run: cp ${{ matrix.binary_path }} ${{ matrix.binary_name }}
+    - name: Resolve Release ID
+      id: resolve_release
+      run: |
+        if [ -n "${{ github.event.release.id }}" ]; then
+          echo "release_id=${{ github.event.release.id }}" >> "$GITHUB_OUTPUT"
+        else
+          ID=$(gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} --jq '.id')
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Upload to Release
       uses: xresloader/upload-to-github-release@v1
       with:
-        release_id: ${{ github.event.release.id }}
+        release_id: ${{ steps.resolve_release.outputs.release_id }}
         file: ${{ matrix.binary_name }}
         overwrite: 'true'
-  npm_release:
-    needs:
-    - build_release
-    name: npm_release
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        repository:
-        - antinomyhq/npm-code-forge
-        - antinomyhq/npm-forgecode
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v6
-      with:
-        repository: ${{ matrix.repository }}
-        ref: main
-        token: ${{ secrets.NPM_ACCESS }}
-    - name: Update NPM Package
-      run: './update-package.sh ${{ github.event.release.tag_name }}'
-      env:
-        AUTO_PUSH: 'true'
-        CI: 'true'
-        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-  homebrew_release:
-    needs:
-    - build_release
-    name: homebrew_release
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v6
-      with:
-        repository: antinomyhq/homebrew-code-forge
-        ref: main
-        token: ${{ secrets.HOMEBREW_ACCESS }}
-    - name: Update Homebrew Formula
-      run: GITHUB_TOKEN="${{ secrets.HOMEBREW_ACCESS }}" ./update-formula.sh ${{ github.event.release.tag_name }}
+
