@@ -39,11 +39,6 @@ jobs:
     strategy:
       matrix:
         include:
-        - binary_name: forge-x86_64-apple-darwin
-          binary_path: target/x86_64-apple-darwin/release/forge
-          cross: 'false'
-          os: macos-latest
-          target: x86_64-apple-darwin
         - binary_name: forge-aarch64-apple-darwin
           binary_path: target/aarch64-apple-darwin/release/forge
           cross: 'false'
