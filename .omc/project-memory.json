@@ -1,0 +1,281 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776532825188,
+  "projectRoot": "/Users/tianhaowang/Codes/forgecode",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "Rust",
+        "version": "1.92",
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {
+      "eval": "tsx benchmarks/cli.ts",
+      "test:bounty": "tsx --test .github/scripts/bounty/tests/*.test.ts",
+      "bounty:sync-issue": "tsx .github/scripts/bounty/src/sync-issue.ts",
+      "bounty:sync-pr": "tsx .github/scripts/bounty/src/sync-pr.ts",
+      "bounty:sync-all-issues": "tsx .github/scripts/bounty/src/sync-all-issues.ts"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "benchmarks": {
+      "path": "benchmarks",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1776532825171,
+      "keyFiles": [
+        "README.md",
+        "cli.ts",
+        "command-generator.ts",
+        "model.ts",
+        "parse.ts"
+      ]
+    },
+    "commands": {
+      "path": "commands",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1776532825171,
+      "keyFiles": [
+        "github-pr-description.md"
+      ]
+    },
+    "crates": {
+      "path": "crates",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776532825173,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1776532825173,
+      "keyFiles": [
+        "tool-guidelines.md"
+      ]
+    },
+    "plans": {
+      "path": "plans",
+      "purpose": null,
+      "fileCount": 25,
+      "lastAccessed": 1776532825174,
+      "keyFiles": [
+        "2025-04-02-system-context-rendering-final.md",
+        "2025-04-02-system-context-rendering-v1.md",
+        "2025-04-02-system-context-rendering-v2.md",
+        "2025-04-06-retry-config-migration.md",
+        "2025-04-11-tool-call-context-implementation.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 3,
+      "lastAccessed": 1776532825174,
+      "keyFiles": [
+        "benchmark.sh",
+        "list-all-porcelain.sh",
+        "test-zsh-utils.sh"
+      ]
+    },
+    "shell-plugin": {
+      "path": "shell-plugin",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1776532825174,
+      "keyFiles": [
+        "README.md",
+        "doctor.zsh",
+        "forge.plugin.zsh",
+        "forge.setup.zsh",
+        "forge.theme.zsh"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1776532825174,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "templates": {
+      "path": "templates",
+      "purpose": null,
+      "fileCount": 12,
+      "lastAccessed": 1776532825174,
+      "keyFiles": [
+        "forge-command-generator-prompt.md",
+        "forge-commit-message-prompt.md",
+        "forge-custom-agent-template.md",
+        "forge-doom-loop-reminder.md",
+        "forge-partial-skill-instructions.md"
+      ]
+    },
+    "shell-plugin/lib": {
+      "path": "shell-plugin/lib",
+      "purpose": "Library code",
+      "fileCount": 7,
+      "lastAccessed": 1776532825175,
+      "keyFiles": [
+        "bindings.zsh",
+        "completion.zsh",
+        "config.zsh"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "crates/forge_main/src/ui.rs",
+      "accessCount": 10,
+      "lastAccessed": 1776543608053,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_main/src/model.rs",
+      "accessCount": 8,
+      "lastAccessed": 1776543870421,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 6,
+      "lastAccessed": 1776543800565,
+      "type": "directory"
+    },
+    {
+      "path": "crates/forge_app/src/services.rs",
+      "accessCount": 5,
+      "lastAccessed": 1776541930322,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_infra/src/env.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776533105307,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_services/src/app_config.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776533082741,
+      "type": "file"
+    },
+    {
+      "path": "crates",
+      "accessCount": 3,
+      "lastAccessed": 1776544865920,
+      "type": "directory"
+    },
+    {
+      "path": "crates/forge_domain/src/env.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776533060175,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_api/src/forge_api.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776533090963,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_main",
+      "accessCount": 2,
+      "lastAccessed": 1776543597391,
+      "type": "directory"
+    },
+    {
+      "path": "shell-plugin/lib/actions/config.zsh",
+      "accessCount": 2,
+      "lastAccessed": 1776545517141,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_domain",
+      "accessCount": 1,
+      "lastAccessed": 1776533049720,
+      "type": "directory"
+    },
+    {
+      "path": "shell-plugin",
+      "accessCount": 1,
+      "lastAccessed": 1776543592939,
+      "type": "directory"
+    },
+    {
+      "path": "shell-plugin/lib/dispatcher.zsh",
+      "accessCount": 1,
+      "lastAccessed": 1776543787672,
+      "type": "file"
+    },
+    {
+      "path": "scripts/install-local.sh",
+      "accessCount": 1,
+      "lastAccessed": 1776544190630,
+      "type": "file"
+    },
+    {
+      "path": "crates/forge_main/src/zsh/plugin.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776544874351,
+      "type": "file"
+    },
+    {
+      "path": "shell-plugin/forge.setup.zsh",
+      "accessCount": 1,
+      "lastAccessed": 1776544882702,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1776547609546,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

@@ -536,7 +536,7 @@ pub enum AppCommand {
     #[command(alias = "s")]
     Suggest {
         /// Natural language description of the shell command
-        #[arg(trailing_var_arg = true, num_args = 0..)]
+        #[arg(trailing_var_arg = true, num_args = 0.., allow_hyphen_values = true)]
         description: Vec<String>,
     },
 
@@ -1737,6 +1737,38 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_suggest_with_dash_prefixed_tokens() {
+        // Setup
+        let cmd_manager = ForgeCommandManager::default();
+
+        // Execute
+        let result = cmd_manager.parse(":suggest --- date").unwrap();
+
+        // Verify
+        assert_eq!(
+            result,
+            AppCommand::Suggest { description: vec!["---".to_string(), "date".to_string()] }
+        );
+    }
+
+    #[test]
+    fn test_parse_suggest_with_double_dash_flags() {
+        // Setup
+        let cmd_manager = ForgeCommandManager::default();
+
+        // Execute
+        let result = cmd_manager.parse(":suggest --date tomorrow").unwrap();
+
+        // Verify
+        assert_eq!(
+            result,
+            AppCommand::Suggest {
+                description: vec!["--date".to_string(), "tomorrow".to_string()]
+            }
+        );
+    }
+
+    #[test]
     fn test_parse_speed_dial_rejects_zero_as_message() {
         // `/0` is reserved as "reset" in the shell and must not activate a
         // slot. It stays a plain chat message.
@@ -1782,5 +1814,20 @@ mod tests {
             "speed-dial-slot"
         );
         assert_eq!(AppCommand::SpeedDialMenu.name(), "speed-dial");
+    }
+
+    #[test]
+    fn test_parse_suggest_with_single_dash() {
+        // Setup
+        let cmd_manager = ForgeCommandManager::default();
+
+        // Execute
+        let result = cmd_manager.parse(":suggest -v file.txt").unwrap();
+
+        // Verify
+        assert_eq!(
+            result,
+            AppCommand::Suggest { description: vec!["-v".to_string(), "file.txt".to_string()] }
+        );
     }
 }

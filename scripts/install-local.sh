@@ -17,10 +17,11 @@
 #
 # Usage
 # -----
-#   scripts/install-local.sh           # release build → ~/.local/bin/forge
+#   scripts/install-local.sh           # release build → ~/.local/bin/forge (version from upstream tag)
 #   scripts/install-local.sh debug     # debug build   → ~/.local/bin/forge
 #   DEST_DIR=/usr/local/bin scripts/install-local.sh
 #   SKIP_BUILD=1 scripts/install-local.sh   # assume target/release/forge exists
+#   APP_VERSION=v2.12.7 scripts/install-local.sh  # override version manually
 #
 # Safe to re-run; each invocation re-signs after copy.
 
@@ -29,6 +30,28 @@ set -euo pipefail
 PROFILE="${1:-release}"
 DEST_DIR="${DEST_DIR:-$HOME/.local/bin}"
 BIN_NAME="forge"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Resolve version: explicit APP_VERSION > latest upstream tag > fallback
+if [[ -z "${APP_VERSION:-}" ]]; then
+    # Fetch upstream tags if the remote exists
+    if git -C "$REPO_ROOT" remote get-url upstream &>/dev/null; then
+        git -C "$REPO_ROOT" fetch upstream --tags --quiet 2>/dev/null || true
+        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 upstream/main 2>/dev/null || true)"
+    fi
+    # Fall back to the latest tag reachable from HEAD
+    if [[ -z "$UPSTREAM_TAG" ]]; then
+        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+    fi
+    if [[ -n "$UPSTREAM_TAG" ]]; then
+        APP_VERSION="$UPSTREAM_TAG"
+    else
+        APP_VERSION="0.1.0-dev"
+    fi
+fi
+
+echo "==> version: $APP_VERSION"
 
 case "$PROFILE" in
     release) CARGO_FLAGS=(--release) TARGET_SUBDIR="release" ;;
@@ -39,13 +62,12 @@ case "$PROFILE" in
         ;;
 esac
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
 DEST_BIN="$DEST_DIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
-    ( cd "$REPO_ROOT" && cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
+    ( cd "$REPO_ROOT" && APP_VERSION="$APP_VERSION" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
 fi
 
 if [[ ! -x "$SRC_BIN" ]]; then
