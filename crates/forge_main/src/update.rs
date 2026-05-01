@@ -7,28 +7,39 @@ use forge_select::ForgeWidget;
 use forge_tracker::VERSION;
 use update_informer::{Check, Version, registry};
 
-/// Runs the official installation script to update Forge, failing silently.
+/// Runs the local forge-update.sh script which:
+///   1. Fetches upstream main and tags.
+///   2. Rebases (or merges) local commits on top of upstream/main.
+///   3. Builds the binary with the upstream release version.
+///   4. Installs the binary locally.
+///   5. Pushes the updated branch to origin.
+///   6. Creates/uploads a GitHub release on the fork.
+///
 /// When `auto_update` is true, exits immediately after a successful update
 /// without prompting the user.
 async fn execute_update_command(api: Arc<impl API>, auto_update: bool) {
-    // Spawn a new task that won't block the main application
-    let output = api
-        .execute_shell_command_raw("curl -fsSL https://forgecode.dev/cli | sh")
-        .await;
+    let command = r#"
+        REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+        if [ -z "$REPO_ROOT" ] || [ ! -f "$REPO_ROOT/scripts/forge-update.sh" ]; then
+            echo "error: forge update must be run from inside the forge repository clone" >&2
+            exit 1
+        fi
+        bash "$REPO_ROOT/scripts/forge-update.sh"
+    "#;
+
+    let output = api.execute_shell_command_raw(command).await;
 
     match output {
         Err(err) => {
-            // Send an event to the tracker on failure
-            // We don't need to handle this result since we're failing silently
-            let _ = send_update_failure_event(&format!("Auto update failed {err}")).await;
+            let _ = send_update_failure_event(&format!("Update failed: {err}")).await;
         }
         Ok(output) => {
             if output.success() {
                 let should_exit = if auto_update {
                     true
                 } else {
-                    let answer = forge_select::ForgeWidget::confirm(
-                        "You need to close forge to complete update. Do you want to close it now?",
+                    let answer = ForgeWidget::confirm(
+                        "Update completed. You need to restart forge to use the new version. Exit now?",
                     )
                     .with_default(true)
                     .prompt();
@@ -42,8 +53,7 @@ async fn execute_update_command(api: Arc<impl API>, auto_update: bool) {
                     Some(code) => format!("Process exited with code: {code}"),
                     None => "Process exited without code".to_string(),
                 };
-                let _ =
-                    send_update_failure_event(&format!("Auto update failed, {exit_output}",)).await;
+                let _ = send_update_failure_event(&format!("Update failed, {exit_output}")).await;
             }
         }
     }
