@@ -48,7 +48,7 @@ fi
 git fetch upstream main --tags --quiet || true
 
 # ------------------------------------------------------------------
-# 2. Rebase / merge local commits on top of upstream/main
+# 2. Merge upstream/main into the current branch
 # ------------------------------------------------------------------
 CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
 if [[ -z "$CURRENT_BRANCH" ]]; then
@@ -60,14 +60,11 @@ UPSTREAM_REF="upstream/main"
 LOCAL_COMMIT_COUNT="$(git rev-list --count "$UPSTREAM_REF..HEAD" 2>/dev/null || echo 0)"
 
 if [[ "$LOCAL_COMMIT_COUNT" -gt 0 ]]; then
-    echo "==> Found $LOCAL_COMMIT_COUNT local commit(s) on $CURRENT_BRANCH. Rebasing onto $UPSTREAM_REF..."
-    git rebase "$UPSTREAM_REF"
+    echo "==> Found $LOCAL_COMMIT_COUNT local commit(s) on $CURRENT_BRANCH. Merging $UPSTREAM_REF..."
+    git merge --no-edit "$UPSTREAM_REF"
 else
     echo "==> No local commits ahead of upstream. Fast-forwarding $CURRENT_BRANCH..."
-    git merge --ff-only "$UPSTREAM_REF" || {
-        echo "warning: fast-forward failed, falling back to rebase" >&2
-        git rebase "$UPSTREAM_REF"
-    }
+    git merge --ff-only "$UPSTREAM_REF"
 fi
 
 # ------------------------------------------------------------------
