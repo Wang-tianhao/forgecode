@@ -812,7 +812,7 @@ mod tests {
     use std::fmt::Write;
     use std::path::PathBuf;
 
-    use forge_domain::{FSRead, FileInfo, ToolValue};
+    use forge_domain::{FSRead, FSReadRange, FileInfo, ToolValue};
 
     use super::*;
     use crate::{Content, Match, MatchResult};
@@ -932,8 +932,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: FSRead {
                 file_path: "/home/user/test.txt".to_string(),
-                start_line: None,
-                end_line: None,
+                range: None,
                 show_line_numbers: true,
             },
             output: ReadOutput {
@@ -963,8 +962,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: FSRead {
                 file_path: "/home/user/test.txt".to_string(),
-                start_line: None,
-                end_line: None,
+                range: None,
                 show_line_numbers: true,
             },
             output: ReadOutput {
@@ -993,8 +991,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: FSRead {
                 file_path: "/home/user/test.txt".to_string(),
-                start_line: Some(2),
-                end_line: Some(3),
+                range: Some(FSReadRange { start_line: Some(2), end_line: Some(3) }),
                 show_line_numbers: true,
             },
             output: ReadOutput {
@@ -1024,8 +1021,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: FSRead {
                 file_path: "/home/user/large_file.txt".to_string(),
-                start_line: None,
-                end_line: None,
+                range: None,
                 show_line_numbers: true,
             },
             output: ReadOutput {
@@ -2789,8 +2785,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: FSRead {
                 file_path: "/home/user/test.png".to_string(),
-                start_line: None,
-                end_line: None,
+                range: None,
                 show_line_numbers: true,
             },
             output: ReadOutput {

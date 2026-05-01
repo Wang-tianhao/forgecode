@@ -276,12 +276,16 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         let model = self
             .get_agent_model(self.api.get_active_agent().await)
             .await;
+        let reasoning_effort = self.api.get_reasoning_effort().await.ok().flatten();
         let mut forge_prompt = ForgePrompt::new(self.state.cwd.clone(), agent_id);
         if let Some(u) = usage {
             forge_prompt.usage(u);
         }
         if let Some(m) = model {
             forge_prompt.model(m);
+        }
+        if let Some(e) = reasoning_effort {
+            forge_prompt.reasoning_effort(e);
         }
         self.console.prompt(&mut forge_prompt).await
     }
@@ -731,6 +735,11 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             }
             TopLevelCommand::Doctor => {
                 self.on_zsh_doctor().await?;
+                return Ok(());
+            }
+            TopLevelCommand::Logs(args) => {
+                let log_dir = self.api.environment().log_path();
+                crate::logs::run(args, log_dir).await?;
                 return Ok(());
             }
         }
@@ -2958,6 +2967,11 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
+        let allows_local_api_key = matches!(
+            provider_id.as_ref().as_ref(),
+            "ollama" | "vllm" | "lm_studio" | "llama_cpp" | "jan_ai"
+        );
+
         // Check if API key is already provided
         // For Google ADC, we use a marker to skip prompting
         // For other providers, we use the existing key as a default value (autofill)
@@ -2967,6 +2981,19 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             // Skip prompting for markers that indicate non-API-key auth
             if key_str == "google_adc_marker" || key_str == "aws_profile_marker" {
                 key_str.to_string()
+            } else if allows_local_api_key {
+                let input = ForgeWidget::input(format!(
+                    "Enter your {provider_id} API key (press Enter to skip)"
+                ))
+                .allow_empty(true);
+                let api_key = input.prompt()?.context("API key input cancelled")?;
+                let api_key_str = api_key.trim();
+
+                if api_key_str.is_empty() {
+                    "local".to_string()
+                } else {
+                    api_key_str.to_string()
+                }
             } else {
                 // For other providers, show the existing key as default (autofill)
                 let input = ForgeWidget::input(format!("Enter your {provider_id} API key"))
@@ -2974,6 +3001,19 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 let api_key = input.prompt()?.context("API key input cancelled")?;
                 let api_key_str = api_key.trim();
                 anyhow::ensure!(!api_key_str.is_empty(), "API key cannot be empty");
+                api_key_str.to_string()
+            }
+        } else if allows_local_api_key {
+            let input = ForgeWidget::input(format!(
+                "Enter your {provider_id} API key (press Enter to skip)"
+            ))
+            .allow_empty(true);
+            let api_key = input.prompt()?.context("API key input cancelled")?;
+            let api_key_str = api_key.trim();
+
+            if api_key_str.is_empty() {
+                "local".to_string()
+            } else {
                 api_key_str.to_string()
             }
         } else {
