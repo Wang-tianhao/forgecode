@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # forge-update.sh — full fork sync, build, install, and release workflow.
 #
-# This script is invoked by `forge update` and performs the following:
-#   1. Fetch latest upstream main (and tags).
-#   2. Rebase or merge local commits on top of upstream/main.
+# Fast path
+# -------
+# If the fork already has a GitHub release matching the upstream latest tag,
+# the script downloads the pre-built binary for the current platform and
+# installs it, skipping all git/build/release steps.
+#
+# Full path (when fork release does not yet exist)
+# ------------------------------------------------
+#   1. Fetch upstream main and tags.
+#   2. Merge upstream/main into the current branch.
 #   3. Build the binary with the upstream release version.
 #   4. Install the binary locally to ~/.local/bin (with codesign on macOS).
 #   5. Push the updated branch to origin.
@@ -37,19 +44,133 @@ if [[ ! -f "$REPO_ROOT/Cargo.toml" ]] || ! grep -q '^\s*name\s*=\s*"forge_main"'
 fi
 
 # ------------------------------------------------------------------
-# 1. Fetch upstream main and tags
+# Helper: resolve fork repo slug
 # ------------------------------------------------------------------
-echo "==> Fetching upstream main and tags..."
+resolve_fork_repo() {
+    if [[ -n "${FORK_REPO:-}" ]]; then
+        echo "$FORK_REPO"
+        return
+    fi
+    local origin_url
+    origin_url="$(git remote get-url origin 2>/dev/null || true)"
+    if [[ -n "$origin_url" ]]; then
+        # Handles both SSH (git@github.com:user/repo.git) and HTTPS
+        echo "$origin_url" | sed -E 's/.*github\.com[:\/]([^\/]+\/[^\/]+)\.git$/\1/'
+    fi
+}
+
+# ------------------------------------------------------------------
+# Helper: compute asset name for the current platform
+# ------------------------------------------------------------------
+compute_asset_name() {
+    local arch os
+    arch="$(uname -m)"
+    os="$(uname -s)"
+
+    case "$arch" in
+        x86_64)          target_arch="x86_64" ;;
+        arm64|aarch64)   target_arch="aarch64" ;;
+        *)               target_arch="$arch" ;;
+    esac
+
+    case "$os" in
+        Darwin)
+            echo "forge-${target_arch}-apple-darwin"
+            ;;
+        Linux)
+            echo "forge-${target_arch}-unknown-linux-gnu"
+            ;;
+        *)
+            echo "forge-${target_arch}-${os}" ;;
+    esac
+}
+
+# ------------------------------------------------------------------
+# Helper: install a binary file to DEST_DIR
+# ------------------------------------------------------------------
+install_binary() {
+    local src="$1"
+    local dest="$DEST_DIR/$BIN_NAME"
+
+    mkdir -p "$DEST_DIR"
+    echo "==> install -m 755 $src -> $dest"
+    install -m 755 "$src" "$dest"
+
+    if command -v codesign >/dev/null 2>&1; then
+        echo "==> codesign -f -s - $dest"
+        codesign -f -s - "$dest"
+    else
+        echo "note: codesign not found, skipping re-sign (non-macOS?)" >&2
+    fi
+
+    if "$dest" --version >/dev/null 2>&1; then
+        echo "==> installed: $("$dest" --version)"
+    else
+        echo "warning: $dest --version returned non-zero — check signing/quarantine" >&2
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------
+# 1. Fetch upstream tags (lightweight — needed for version resolution)
+# ------------------------------------------------------------------
+echo "==> Fetching upstream tags..."
 if ! git remote get-url upstream &>/dev/null; then
     echo "error: 'upstream' remote not found. Add it with:" >&2
     echo "  git remote add upstream https://github.com/tailcallhq/forgecode.git" >&2
     exit 1
 fi
-git fetch upstream main --tags --quiet || true
+git fetch upstream --tags --quiet 2>/dev/null || true
 
 # ------------------------------------------------------------------
-# 2. Merge upstream/main into the current branch
+# 2. Resolve upstream latest tag
 # ------------------------------------------------------------------
+UPSTREAM_TAG="$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || true)"
+if [[ -z "$UPSTREAM_TAG" ]]; then
+    UPSTREAM_TAG="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+fi
+if [[ -n "$UPSTREAM_TAG" ]]; then
+    APP_VERSION="$UPSTREAM_TAG"
+else
+    APP_VERSION="0.1.0-dev"
+fi
+echo "==> upstream version: $APP_VERSION"
+
+# ------------------------------------------------------------------
+# 3. FAST PATH: if fork already has this release, download & install
+# ------------------------------------------------------------------
+FORK_REPO="$(resolve_fork_repo)"
+ASSET_NAME="$(compute_asset_name)"
+
+if [[ -n "$FORK_REPO" ]] && command -v gh >/dev/null 2>&1; then
+    if gh release view "$APP_VERSION" --repo "$FORK_REPO" >/dev/null 2>&1; then
+        echo "==> Fork already has release $APP_VERSION. Checking for asset $ASSET_NAME..."
+
+        TMP_BIN="$(mktemp)"
+        if gh release download "$APP_VERSION" \
+            --repo "$FORK_REPO" \
+            --pattern "$ASSET_NAME" \
+            -O "$TMP_BIN" 2>/dev/null; then
+
+            install_binary "$TMP_BIN"
+            rm -f "$TMP_BIN"
+            echo "==> Done. Installed from existing fork release $APP_VERSION."
+            exit 0
+        else
+            echo "==> Asset $ASSET_NAME not found in fork release $APP_VERSION. Falling back to build."
+            rm -f "$TMP_BIN"
+        fi
+    fi
+fi
+
+# ------------------------------------------------------------------
+# 4. FULL PATH: fetch upstream main, merge, build, install, push, release
+# ------------------------------------------------------------------
+echo "==> Full build path: syncing, building, and publishing..."
+
+# Fetch upstream main
+git fetch upstream main --quiet || true
+
 CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
 if [[ -z "$CURRENT_BRANCH" ]]; then
     echo "error: not on any branch (detached HEAD?)" >&2
@@ -68,20 +189,6 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 3. Resolve version from upstream latest tag
-# ------------------------------------------------------------------
-UPSTREAM_TAG="$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || true)"
-if [[ -z "$UPSTREAM_TAG" ]]; then
-    UPSTREAM_TAG="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
-fi
-if [[ -n "$UPSTREAM_TAG" ]]; then
-    APP_VERSION="$UPSTREAM_TAG"
-else
-    APP_VERSION="0.1.0-dev"
-fi
-echo "==> version: $APP_VERSION"
-
-# ------------------------------------------------------------------
 # Build binary
 # ------------------------------------------------------------------
 case "$PROFILE" in
@@ -94,7 +201,6 @@ case "$PROFILE" in
 esac
 
 SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
-DEST_BIN="$DEST_DIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
@@ -106,29 +212,10 @@ if [[ ! -x "$SRC_BIN" ]]; then
     exit 1
 fi
 
-# ------------------------------------------------------------------
-# 4. Install locally with correct permissions / code signature
-# ------------------------------------------------------------------
-mkdir -p "$DEST_DIR"
-echo "==> install -m 755 $SRC_BIN -> $DEST_BIN"
-install -m 755 "$SRC_BIN" "$DEST_BIN"
-
-if command -v codesign >/dev/null 2>&1; then
-    echo "==> codesign -f -s - $DEST_BIN"
-    codesign -f -s - "$DEST_BIN"
-else
-    echo "note: codesign not found, skipping re-sign (non-macOS?)" >&2
-fi
-
-if "$DEST_BIN" --version >/dev/null 2>&1; then
-    echo "==> installed: $("$DEST_BIN" --version)"
-else
-    echo "warning: $DEST_BIN --version returned non-zero — check signing/quarantine" >&2
-    exit 1
-fi
+install_binary "$SRC_BIN"
 
 # ------------------------------------------------------------------
-# 5. Push updated branch to origin
+# Push updated branch to origin
 # ------------------------------------------------------------------
 echo "==> Pushing $CURRENT_BRANCH to origin..."
 git push origin "$CURRENT_BRANCH" --force-with-lease || {
@@ -136,7 +223,7 @@ git push origin "$CURRENT_BRANCH" --force-with-lease || {
 }
 
 # ------------------------------------------------------------------
-# 6. Publish GitHub release on fork
+# Publish GitHub release on fork
 # ------------------------------------------------------------------
 if [[ "${SKIP_RELEASE:-0}" == "1" ]]; then
     echo "==> SKIP_RELEASE=1; skipping GitHub release publish"
@@ -148,34 +235,12 @@ if ! command -v gh >/dev/null 2>&1; then
     exit 0
 fi
 
-# Resolve fork repo slug from origin remote
-if [[ -z "${FORK_REPO:-}" ]]; then
-    ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
-    if [[ -n "$ORIGIN_URL" ]]; then
-        # Handles both SSH (git@github.com:user/repo.git) and HTTPS
-        FORK_REPO="$(echo "$ORIGIN_URL" | sed -E 's/.*github\.com[:\/]([^\/]+\/[^\/]+)\.git$/\1/')"
-    fi
-fi
-
-if [[ -z "${FORK_REPO:-}" ]]; then
+if [[ -z "$FORK_REPO" ]]; then
     echo "warning: could not detect fork repo; set FORK_REPO=user/repo to publish releases" >&2
     exit 0
 fi
 
 echo "==> Publishing release $APP_VERSION to $FORK_REPO..."
-
-# Determine asset name matching upstream release workflow
-ARCH="$(uname -m)"
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-case "$ARCH" in
-    x86_64)  TARGET_ARCH="x86_64" ;;
-    arm64|aarch64) TARGET_ARCH="aarch64" ;;
-    *)       TARGET_ARCH="$ARCH" ;;
-esac
-ASSET_NAME="forge-${TARGET_ARCH}-${OS}-darwin"
-if [[ "$OS" == "linux" ]]; then
-    ASSET_NAME="forge-${TARGET_ARCH}-unknown-linux-gnu"
-fi
 
 TMP_ASSET="$(mktemp)"
 cp "$SRC_BIN" "$TMP_ASSET"
