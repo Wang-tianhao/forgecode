@@ -74,8 +74,6 @@ reqwest = { version = "0.12.23", features = [
     "http2",
 ], default-features = false }
 rustls = { version = "0.23", features = ["ring"], default-features = false }
-reqwest-eventsource = "0.6.0"
-eventsource-stream = "0.2.3"
 include_dir = "0.7.4"
 schemars = "1.2"
 serde = { version = "1.0.217", features = ["derive"] }
@@ -111,6 +109,8 @@ tracing = "0.1.44"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 url = { version = "2.5.8", features = ["serde"] }
+terminal_size = "0.4"
+unicode-width = "0.2"
 backon = "1.5.2"
 eserde = "0.1.7"
 uuid = { version = "1.23.0", features = [
@@ -136,7 +136,7 @@ num-format = "0.4"
 humantime = "2.1.0"
 dashmap = "7.0.0-rc2"
 async-openai = { version = "0.34.0", default-features = false, features = ["response-types"] } # Using only types, not the API client - reduces dependencies
-gix = "0.82"
+gix = "0.83"
 google-cloud-auth = "1.8.0" # Google Cloud authentication with automatic token refresh
 
 # Internal crates
@@ -164,3 +164,5 @@ forge_test_kit = { path = "crates/forge_test_kit" }
 
 forge_markdown_stream = { path = "crates/forge_markdown_stream" }
 forge_config = { path = "crates/forge_config" }
+forge_eventsource = { path = "crates/forge_eventsource" }
+forge_eventsource_stream = { path = "crates/forge_eventsource_stream" }
