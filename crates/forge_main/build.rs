@@ -12,6 +12,14 @@ fn main() {
         .map(|v| clean_version(&v))
         .unwrap_or_else(|_| "0.1.0-dev".to_string());
 
+    // Append an optional fork label so custom builds are distinguishable from
+    // official releases with the same upstream tag (e.g. FORK_LABEL=wang
+    // turns 2.13.21 into 2.13.21-wang).
+    let version = match std::env::var("FORK_LABEL") {
+        Ok(label) if !label.is_empty() => format!("{version}-{}", clean_version(&label)),
+        _ => version,
+    };
+
     // Make version available to the application
     println!("cargo:rustc-env=CARGO_PKG_VERSION={version}");
 
@@ -20,4 +28,5 @@ fn main() {
 
     // Ensure rebuild when environment changes
     println!("cargo:rerun-if-env-changed=APP_VERSION");
+    println!("cargo:rerun-if-env-changed=FORK_LABEL");
 }

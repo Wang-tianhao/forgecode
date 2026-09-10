@@ -23,6 +23,7 @@
 #   DEST_DIR=/usr/local/bin scripts/install-local.sh
 #   SKIP_BUILD=1 scripts/install-local.sh       # assume target/release/forge exists
 #   APP_VERSION=v2.12.7 scripts/install-local.sh
+#   FORK_LABEL=wang scripts/install-local.sh   # version becomes 2.12.7-wang
 #   GITHUB_REPO=Wang-tianhao/forgecode scripts/install-local.sh --download
 #
 # Safe to re-run; each invocation re-signs after copy.
@@ -126,7 +127,7 @@ SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
-    ( cd "$REPO_ROOT" && APP_VERSION="$APP_VERSION" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
+    ( cd "$REPO_ROOT" && APP_VERSION="$APP_VERSION" FORK_LABEL="${FORK_LABEL-wang}" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
 fi
 
 if [[ ! -x "$SRC_BIN" ]]; then

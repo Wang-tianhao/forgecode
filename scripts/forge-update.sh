@@ -23,12 +23,15 @@
 #   SKIP_BUILD      Set to 1 to skip cargo build (use existing target/release/forge).
 #   SKIP_RELEASE    Set to 1 to skip GitHub release creation/upload.
 #   PROFILE         Build profile: release (default) or debug.
+#   FORK_LABEL      Suffix appended to the version to mark custom builds
+#                   (default: wang; set to empty to disable).
 
 set -euo pipefail
 
 PROFILE="${PROFILE:-release}"
 DEST_DIR="${DEST_DIR:-$HOME/.local/bin}"
 BIN_NAME="forge"
+FORK_LABEL="${FORK_LABEL-wang}"
 
 # ------------------------------------------------------------------
 # Resolve repo root
@@ -204,7 +207,7 @@ SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
-    APP_VERSION="$APP_VERSION" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME"
+    APP_VERSION="$APP_VERSION" FORK_LABEL="$FORK_LABEL" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME"
 fi
 
 if [[ ! -x "$SRC_BIN" ]]; then
