@@ -245,7 +245,8 @@ fi
 
 echo "==> Publishing release $APP_VERSION to $FORK_REPO..."
 
-TMP_ASSET="$(mktemp)"
+TMP_DIR="$(mktemp -d)"
+TMP_ASSET="$TMP_DIR/$ASSET_NAME"
 cp "$SRC_BIN" "$TMP_ASSET"
 
 # Create release if it doesn't exist; ignore errors if it already does
@@ -260,6 +261,6 @@ fi
 gh release upload "$APP_VERSION" "$TMP_ASSET" --repo "$FORK_REPO" --clobber || {
     echo "warning: failed to upload release asset" >&2
 }
-rm -f "$TMP_ASSET"
+rm -rf "$TMP_DIR"
 
 echo "==> Done. Release $APP_VERSION published to https://github.com/$FORK_REPO/releases/tag/$APP_VERSION"
