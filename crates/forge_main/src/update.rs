@@ -19,11 +19,7 @@ const FORK_REPO: &str = match option_env!("FORK_REPO") {
 /// Computes the release asset name for the current platform, matching the
 /// naming scheme used by `scripts/forge-update.sh` when publishing releases.
 fn asset_name() -> String {
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "aarch64",
-        other => other,
-    };
+    let arch = std::env::consts::ARCH;
     match std::env::consts::OS {
         "macos" => format!("forge-{arch}-apple-darwin"),
         "linux" => format!("forge-{arch}-unknown-linux-gnu"),
@@ -173,7 +169,7 @@ pub async fn on_update(api: Arc<impl API>, update: Option<&Update>) {
     }
 
     // Check the fork's releases: a prompt only appears once a downloadable
-    // custom build has been published for a new upstream version.
+    // custom build has been published for a new upstream or fork version.
     let informer = update_informer::new(registry::GitHub, FORK_REPO, VERSION)
         .interval(frequency.into());
 
@@ -231,11 +227,7 @@ mod tests {
     fn test_asset_name_matches_platform_naming_scheme() {
         let actual = asset_name();
 
-        let arch = match std::env::consts::ARCH {
-            "x86_64" => "x86_64",
-            "aarch64" => "aarch64",
-            other => other,
-        };
+        let arch = std::env::consts::ARCH;
         let expected = match std::env::consts::OS {
             "macos" => format!("forge-{arch}-apple-darwin"),
             "linux" => format!("forge-{arch}-unknown-linux-gnu"),
@@ -246,12 +238,14 @@ mod tests {
 
     #[test]
     fn test_download_command_targets_fork_release_and_current_exe() {
-        let fixture = "2.13.21";
+        let fixture = "2.13.21-wang.1.2.3";
 
         let actual = download_command(fixture).unwrap();
 
         let exe = std::env::current_exe().unwrap();
-        assert!(actual.contains(&format!("github.com/{FORK_REPO}/releases/download/v2.13.21/")));
+        assert!(actual.contains(&format!(
+            "github.com/{FORK_REPO}/releases/download/v2.13.21-wang.1.2.3/"
+        )));
         assert!(actual.contains(&asset_name()));
         assert!(actual.contains(&exe.display().to_string()));
         assert!(actual.contains("codesign"));

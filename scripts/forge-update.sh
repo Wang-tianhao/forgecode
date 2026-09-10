@@ -3,7 +3,7 @@
 #
 # Fast path
 # -------
-# If the fork already has a GitHub release matching the upstream latest tag,
+# If the fork already has a GitHub release matching the combined version,
 # the script downloads the pre-built binary for the current platform and
 # installs it, skipping all git/build/release steps.
 #
@@ -25,6 +25,7 @@
 #   PROFILE         Build profile: release (default) or debug.
 #   FORK_LABEL      Suffix appended to the version to mark custom builds
 #                   (default: wang; set to empty to disable).
+#   FORK_VERSION    Fork MAJOR.MINOR.PATCH (default: repository FORK_VERSION file).
 
 set -euo pipefail
 
@@ -128,9 +129,9 @@ git fetch upstream --tags --quiet 2>/dev/null || true
 # ------------------------------------------------------------------
 # 2. Resolve upstream latest tag
 # ------------------------------------------------------------------
-UPSTREAM_TAG="$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || true)"
+UPSTREAM_TAG="$(git describe --tags --match 'v[0-9]*' --exclude '*-*' --abbrev=0 upstream/main 2>/dev/null || true)"
 if [[ -z "$UPSTREAM_TAG" ]]; then
-    UPSTREAM_TAG="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+    UPSTREAM_TAG="$(git describe --tags --match 'v[0-9]*' --exclude '*-*' --abbrev=0 HEAD 2>/dev/null || true)"
 fi
 if [[ -n "$UPSTREAM_TAG" ]]; then
     APP_VERSION="$UPSTREAM_TAG"
@@ -138,6 +139,8 @@ else
     APP_VERSION="0.1.0-dev"
 fi
 echo "==> upstream version: $APP_VERSION"
+APP_VERSION="$(FORK_LABEL="$FORK_LABEL" bash "$SCRIPT_DIR/fork-version.sh" "$APP_VERSION")"
+echo "==> fork version: $APP_VERSION"
 
 # ------------------------------------------------------------------
 # 3. FAST PATH: if fork already has this release, download & install
@@ -207,7 +210,7 @@ SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
-    APP_VERSION="$APP_VERSION" FORK_LABEL="$FORK_LABEL" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME"
+    APP_VERSION="$APP_VERSION" FORK_LABEL="" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME"
 fi
 
 if [[ ! -x "$SRC_BIN" ]]; then
@@ -253,6 +256,7 @@ cp "$SRC_BIN" "$TMP_ASSET"
 if ! gh release view "$APP_VERSION" --repo "$FORK_REPO" >/dev/null 2>&1; then
     gh release create "$APP_VERSION" \
         --repo "$FORK_REPO" \
+        --target "$(git rev-parse HEAD)" \
         --title "$APP_VERSION" \
         --notes "Fork release $APP_VERSION (synced from upstream)" || true
 fi

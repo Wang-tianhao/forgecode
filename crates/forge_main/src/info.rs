@@ -1301,8 +1301,7 @@ mod tests {
             .set(3, SpeedDialEntry::new("openai", "gpt-5.4"))
             .unwrap();
 
-        let mut config = ForgeConfig::default();
-        config.speed_dial = Some(speed_dial);
+        let config = ForgeConfig::default().speed_dial(speed_dial);
 
         let info = super::Info::from(&config);
         let rendered = info.to_string();
