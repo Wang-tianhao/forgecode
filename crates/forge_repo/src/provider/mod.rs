@@ -2,6 +2,7 @@ mod anthropic;
 mod bedrock;
 mod bedrock_cache;
 mod bedrock_sanitize_ids;
+mod catalog;
 mod chat;
 mod event;
 mod google;

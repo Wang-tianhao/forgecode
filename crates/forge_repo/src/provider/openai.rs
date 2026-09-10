@@ -251,6 +251,9 @@ impl<H: HttpInfra> OpenAIProvider<H> {
     }
 
     async fn inner_models(&self) -> Result<Vec<forge_app::domain::Model>> {
+        if super::catalog::is_zai_catalog(&self.provider) {
+            return super::catalog::fetch_models(self.http.as_ref()).await;
+        }
         // For Vertex AI, load models from static JSON file using VertexProvider logic
         if self.provider.id == ProviderId::VERTEX_AI {
             debug!("Loading Vertex AI models from static JSON file");

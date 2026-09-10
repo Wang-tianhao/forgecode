@@ -255,6 +255,19 @@ static PROVIDER_CONFIGS: LazyLock<Vec<ProviderConfig>> = LazyLock::new(|| {
         .unwrap()
 });
 
+/// Returns the bundled Coding Plan models for offline first use.
+pub(super) fn bundled_zai_models() -> Vec<forge_domain::Model> {
+    PROVIDER_CONFIGS
+        .iter()
+        .find_map(|config| match &config.models {
+            Some(Models::Hardcoded(models)) if config.id == ProviderId::ZAI_CODING => {
+                Some(models.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 fn get_provider_configs() -> &'static Vec<ProviderConfig> {
     &PROVIDER_CONFIGS
 }
@@ -571,6 +584,14 @@ impl<
     /// Returns merged provider configs (embedded + custom)
     async fn get_merged_configs(&self) -> Vec<ProviderConfig> {
         let mut configs = ProviderConfigs(get_provider_configs().clone());
+        // Set the built-in source before merging so explicit user overrides win.
+        if let Some(config) = configs
+            .0
+            .iter_mut()
+            .find(|c| c.id == ProviderId::ZAI_CODING)
+        {
+            config.models = Some(Models::Url(super::catalog::URL.to_owned()));
+        }
         // Merge custom file configs into embedded configs
         configs.merge(ProviderConfigs(
             self.get_custom_provider_configs().await.unwrap_or_default(),
@@ -1922,6 +1943,35 @@ mod env_tests {
         assert!(config.url.contains("{{OLLAMA_SSL_SCHEME}}://"));
         assert!(config.url.contains("{{OLLAMA_HOST}}"));
         assert!(!config.url.contains("{{OLLAMA_URL}}"));
+    }
+
+    #[tokio::test]
+    async fn test_zai_catalog_default_and_explicit_model_overrides() {
+        let fixture = ForgeProviderRepository::new(Arc::new(MockInfra::new(HashMap::new())));
+        let configs = fixture.get_merged_configs().await;
+        let actual = configs
+            .iter()
+            .find(|c| c.id == ProviderId::ZAI_CODING)
+            .unwrap();
+        let expected = Some(Models::Url(super::super::catalog::URL.to_owned()));
+        assert_eq!(actual.models, expected);
+
+        for models in [
+            Models::Hardcoded(vec![Model::new("custom")]),
+            Models::Url("https://example.com/models".to_owned()),
+        ] {
+            let mut fixture = ProviderConfigs(configs.clone());
+            let mut custom = actual.clone();
+            custom.models = Some(models.clone());
+            fixture.merge(ProviderConfigs(vec![custom]));
+            let actual = fixture
+                .0
+                .iter()
+                .find(|c| c.id == ProviderId::ZAI_CODING)
+                .unwrap();
+            let expected = Some(models);
+            assert_eq!(actual.models, expected);
+        }
     }
 
     #[tokio::test]
