@@ -19,11 +19,7 @@ const FORK_REPO: &str = match option_env!("FORK_REPO") {
 /// Computes the release asset name for the current platform, matching the
 /// naming scheme used by `scripts/forge-update.sh` when publishing releases.
 fn asset_name() -> String {
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "aarch64",
-        other => other,
-    };
+    let arch = std::env::consts::ARCH;
     match std::env::consts::OS {
         "macos" => format!("forge-{arch}-apple-darwin"),
         "linux" => format!("forge-{arch}-unknown-linux-gnu"),
@@ -231,11 +227,7 @@ mod tests {
     fn test_asset_name_matches_platform_naming_scheme() {
         let actual = asset_name();
 
-        let arch = match std::env::consts::ARCH {
-            "x86_64" => "x86_64",
-            "aarch64" => "aarch64",
-            other => other,
-        };
+        let arch = std::env::consts::ARCH;
         let expected = match std::env::consts::OS {
             "macos" => format!("forge-{arch}-apple-darwin"),
             "linux" => format!("forge-{arch}-unknown-linux-gnu"),
