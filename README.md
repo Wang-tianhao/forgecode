@@ -356,7 +356,7 @@ model_id    = "gpt-5.4"
 Use the interactive picker or the CLI to populate slots:
 
 ```zsh
-:sd                       # fzf chooser: pick slot 1..9, then pick a model
+:sd                       # forge select: pick slot 1..9, then pick a model
 :sd 3                     # skip the slot chooser — go straight to the model picker for slot 3
 :sd 3 --clear             # remove the binding for slot 3
 
@@ -455,7 +455,7 @@ After running `:sync`, the AI can search your codebase by meaning rather than ex
 | `:reasoning-effort <lvl>` | `:re` | Set reasoning effort for session |
 | `:config-reload` | `:cr` | Reset session overrides to global config |
 | `:1` … `:9` | | Sticky switch to speed-dial slot 1..9 (`:N <prompt>` borrows slot N for one turn, then reverts) |
-| `:speed-dial` | `:sd` | Manage speed-dial slot bindings (fzf chooser) |
+| `:speed-dial` | `:sd` | Manage speed-dial slot bindings (forge select) |
 | `:info` | `:i` | Show session info |
 | `:sync` | `:workspace-sync` | Index codebase for semantic search |
 | `:tools` | `:t` | List available tools |

@@ -374,6 +374,59 @@ mod tests {
     // Mutex to ensure tests that modify environment variables run serially
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+    #[cfg(unix)]
+    #[test]
+    fn test_speed_dial_uses_shared_selectors() {
+        use pretty_assertions::assert_eq;
+
+        let fixture = format!(
+            "{}\n{}\n{}",
+            include_str!("../../../../shell-plugin/lib/helpers.zsh"),
+            include_str!("../../../../shell-plugin/lib/actions/config.zsh"),
+            r#"
+_forge_select() {
+    case "$1" in
+        speed-dial-slot) [[ -n "$slot" ]] && print -r -- "$slot" ;;
+        model) [[ -n "$model" ]] && print -r -- "$model" ;;
+        *) return 99 ;;
+    esac
+}
+_forge_exec() { printf '<%s>' "$@"; }
+_forge_log() { print -r -- "$1"; }
+slot=7
+model=$'model/with spaces\nprovider-test'
+_forge_action_speed_dial_manage ''
+slot=invalid
+_forge_action_speed_dial_manage 3
+_forge_action_speed_dial_manage '9 --clear'
+_forge_action_speed_dial_manage ''
+slot=''
+_forge_action_speed_dial_manage ''
+model=''
+_forge_action_speed_dial_manage 3
+model=malformed
+_forge_action_speed_dial_manage 3
+_forge_action_speed_dial_manage 0
+"#,
+        );
+        let actual = std::process::Command::new("zsh")
+            .args(["-f", "-c", &fixture])
+            .output();
+        let actual = match actual {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            result => result.unwrap(),
+        };
+        let expected = concat!(
+            "\n<config><set><speed-dial><7><provider-test><model/with spaces>",
+            "\n<config><set><speed-dial><3><provider-test><model/with spaces>",
+            "\n<config><set><speed-dial><9><--clear>",
+            "\nerror\n\n\n\n\nerror\n",
+        );
+        assert!(actual.status.success());
+        assert_eq!(String::from_utf8(actual.stderr).unwrap(), "");
+        assert_eq!(String::from_utf8(actual.stdout).unwrap(), expected);
+    }
+
     /// Test that the doctor script executes and streams output
     /// Note: The script may fail with non-zero exit code in test environment
     /// (e.g., plugin not loaded), or zsh may not be available in CI

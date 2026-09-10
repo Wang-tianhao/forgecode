@@ -205,8 +205,8 @@ function _forge_action_speed_dial() {
 # Action handler: Manage speed-dial bindings.
 #
 # Forms:
-#   :sd                    — open fzf over slots 1..9 (showing current
-#                            binding or `<empty>`), then `_forge_pick_model`
+#   :sd                    — select from slots 1..9 (showing current
+#                            binding or `<empty>`), then select a model
 #                            for the chosen slot and persist via
 #                            `forge config set speed-dial <N> <provider> <model>`.
 #   :sd <N>                — skip slot picker, go straight to model picker
@@ -244,37 +244,12 @@ function _forge_action_speed_dial_manage() {
             return 0
         fi
 
-        # If no slot was supplied, show an fzf chooser over slots 1..9.
+        # If no slot was supplied, use the shared forge selector.
         if [[ -z "$target_slot" ]]; then
-            local slot_table header row n
-            header="SLOT${_FORGE_DELIMITER}PROVIDER${_FORGE_DELIMITER}MODEL"
-            slot_table="$header"
-            for n in 1 2 3 4 5 6 7 8 9; do
-                local binding provider_id model_id
-                binding=$($_FORGE_BIN config get speed-dial-slot "$n" 2>/dev/null)
-                if [[ -n "$binding" ]]; then
-                    provider_id=$(printf '%s' "$binding" | awk -F '\t' '{print $1}')
-                    model_id=$(printf '%s' "$binding" | awk -F '\t' '{print $2}')
-                else
-                    provider_id="<empty>"
-                    model_id="<empty>"
-                fi
-                row="${n}${_FORGE_DELIMITER}${provider_id}${_FORGE_DELIMITER}${model_id}"
-                slot_table="${slot_table}"$'\n'"${row}"
-            done
-
-            local selected
-            selected=$(echo "$slot_table" | _forge_fzf --header-lines=1 \
-                --delimiter="$_FORGE_DELIMITER" \
-                --prompt="Speed Dial ❯ " \
-                --with-nth="1,2,3")
-
-            if [[ -z "$selected" ]]; then
+            target_slot=$(_forge_select speed-dial-slot)
+            if [[ -z "$target_slot" ]]; then
                 return 0
             fi
-
-            target_slot=$(echo "$selected" | awk -F "$_FORGE_DELIMITER" '{print $1}')
-            target_slot=${target_slot//[[:space:]]/}
 
             if [[ ! "$target_slot" =~ ^[1-9]$ ]]; then
                 _forge_log error "Invalid slot selection: '${target_slot}'"
@@ -283,25 +258,9 @@ function _forge_action_speed_dial_manage() {
         fi
 
         # Open the model picker for the chosen slot and persist the binding.
-        local selected_model
-        selected_model=$(_forge_pick_model "Speed Dial ${target_slot} ❯ " "" "" "" 4)
-
-        if [[ -z "$selected_model" ]]; then
-            return 0
+        if _forge_select_model_pair ""; then
+            _forge_exec config set speed-dial "$target_slot" "${reply[2]}" "${reply[1]}"
         fi
-
-        local model_id provider_id
-        model_id=$(echo "$selected_model" | awk -F '  +' '{print $1}')
-        provider_id=$(echo "$selected_model" | awk -F '  +' '{print $4}')
-        model_id=${model_id//[[:space:]]/}
-        provider_id=${provider_id//[[:space:]]/}
-
-        if [[ -z "$provider_id" || -z "$model_id" ]]; then
-            _forge_log error "Failed to parse selection: '${selected_model}'"
-            return 0
-        fi
-
-        _forge_exec config set speed-dial "$target_slot" "$provider_id" "$model_id"
     )
 }
 

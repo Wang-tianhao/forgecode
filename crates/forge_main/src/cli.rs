@@ -175,6 +175,15 @@ pub struct SelectCommandGroup {
 /// shell plugin to consume.
 #[derive(Subcommand, Debug, Clone)]
 pub enum SelectCommand {
+    /// Select a speed-dial slot, including empty slots, interactively.
+    ///
+    /// Prints the selected slot number on stdout, or nothing on cancellation.
+    SpeedDialSlot {
+        /// Initial query text pre-filled in the search box.
+        #[arg(long, short = 'q')]
+        query: Option<String>,
+    },
+
     /// Select a model interactively from all configured providers.
     ///
     /// Prints the selected model_id on the first line and provider_id on the
@@ -990,6 +999,19 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_select_speed_dial_slot_query() {
+        let fixture = ["forge", "select", "speed-dial-slot", "--query", "9"];
+        let actual = match Cli::parse_from(fixture).subcommands {
+            Some(TopLevelCommand::Select(SelectCommandGroup {
+                command: SelectCommand::SpeedDialSlot { query },
+            })) => query,
+            _ => None,
+        };
+        let expected = Some("9".to_string());
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_data_command_group_conversion() {

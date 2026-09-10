@@ -833,11 +833,31 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 return Ok(());
             }
             TopLevelCommand::Select(cmd) => {
-                if !matches!(&cmd.command, SelectCommand::File { .. }) {
+                if !matches!(
+                    &cmd.command,
+                    SelectCommand::File { .. } | SelectCommand::SpeedDialSlot { .. }
+                ) {
                     self.init_state(false).await?;
                 }
 
                 match &cmd.command {
+                    SelectCommand::SpeedDialSlot { query } => {
+                        let speed_dial = self.api.get_speed_dial().await?;
+                        let mut rows = vec![SelectRow::header("SLOT  PROVIDER  MODEL")];
+                        for slot in
+                            forge_config::SPEED_DIAL_MIN_SLOT..=forge_config::SPEED_DIAL_MAX_SLOT
+                        {
+                            let (provider, model) = speed_dial
+                                .get(slot)
+                                .map(|entry| (entry.provider_id.as_str(), entry.model_id.as_str()))
+                                .unwrap_or(("<empty>", "<empty>"));
+                            let display = format!("{slot}     {provider}  {model}");
+                            rows.push(
+                                SelectRow::new(slot.to_string(), display.clone()).search(display),
+                            );
+                        }
+                        self.select_row_output("Speed Dial ❯ ", query.clone(), rows)?;
+                    }
                     SelectCommand::File { query } => {
                         if let Some(file) =
                             crate::completer::select_workspace_file(&self.state.cwd, query.clone())?
