@@ -995,6 +995,7 @@ impl ToolCatalog {
             .with(|s| {
                 s.meta_schema = None;
                 s.inline_subschemas = true;
+                s.transforms.push(Box::new(crate::RemoveSchemaTitles));
             })
             .into_generator();
 

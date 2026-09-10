@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use forge_select::ForgeWidget;
-use reedline::{Completer, Span, Suggestion};
 
+use crate::completer::input_completer::InputSuggestion;
+use crate::completer::search_term::Span;
 use crate::model::{ForgeCommand, ForgeCommandManager};
 
 /// A display wrapper for `ForgeCommand` that renders the name and description
-/// side-by-side for fzf.
+/// side-by-side for the interactive picker.
 #[derive(Clone)]
 struct CommandRow(ForgeCommand);
 
@@ -25,8 +26,8 @@ impl CommandCompleter {
     }
 }
 
-impl Completer for CommandCompleter {
-    fn complete(&mut self, line: &str, _: usize) -> Vec<reedline::Suggestion> {
+impl CommandCompleter {
+    pub fn complete(&mut self, line: &str, _: usize) -> Vec<InputSuggestion> {
         // Determine which sentinel the user typed (`:` or `/`), defaulting to `/`.
         let sentinel = if line.starts_with(':') { ':' } else { '/' };
 
@@ -74,15 +75,10 @@ impl Completer for CommandCompleter {
 
         match builder.prompt() {
             Ok(Some(row)) => {
-                vec![Suggestion {
+                vec![InputSuggestion {
                     value: row.0.name,
-                    description: None,
-                    style: None,
-                    extra: None,
                     span: Span::new(0, line.len()),
                     append_whitespace: true,
-                    match_indices: None,
-                    display_override: None,
                 }]
             }
             _ => vec![],

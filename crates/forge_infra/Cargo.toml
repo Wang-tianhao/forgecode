@@ -36,7 +36,7 @@ forge_eventsource.workspace = true
 glob.workspace = true
 futures.workspace = true
 diesel = { version= "2.3.7", features = ["sqlite", "r2d2", "chrono"] }
-libsqlite3-sys = { version = "0.37.0", features = ["bundled"] }
+libsqlite3-sys = { version = "0.38.0", features = ["bundled"] }
 diesel_migrations = "2.2.0"
 chrono = { version = "0.4", features = ["serde"] }
 cacache = { version = "13.1.0", features = ["tokio-runtime"], default-features = false }
@@ -54,7 +54,7 @@ aws-credential-types.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "time", "test-util"] }
-serial_test = "3.4"
+serial_test = "4.0"
 fake = { version = "5.1.0", features = ["derive"] }
 pretty_assertions.workspace = true
 forge_domain = { path = "../forge_domain" }

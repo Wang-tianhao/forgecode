@@ -11,7 +11,7 @@ use merge::Merge;
 use serde::Deserialize;
 
 /// Represents the source of models for a provider
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 enum Models {
     /// Models are fetched from a URL
@@ -27,8 +27,15 @@ enum Models {
 enum UrlParamVarConfig {
     /// A plain environment variable name with free-text UI input.
     Plain(String),
-    /// A parameter with a constrained set of options, rendered as a dropdown.
-    WithOptions { name: String, options: Vec<String> },
+    /// A parameter with a constrained set of options, rendered as a dropdown,
+    /// and an optional flag indicating the param may be left blank.
+    WithOptions {
+        name: String,
+        #[serde(default)]
+        options: Vec<String>,
+        #[serde(default)]
+        optional: bool,
+    },
 }
 
 impl UrlParamVarConfig {
@@ -40,18 +47,32 @@ impl UrlParamVarConfig {
         }
     }
 
+    /// Returns whether this parameter is optional.
+    fn is_optional(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::WithOptions { optional, .. } => *optional,
+        }
+    }
+
     /// Converts into a `URLParamSpec` for use in the domain layer.
     fn into_spec(self) -> URLParamSpec {
         match self {
             Self::Plain(s) => URLParamSpec::new(URLParam::from(s)),
-            Self::WithOptions { name, options } => {
-                URLParamSpec::with_options(URLParam::from(name), options)
+            Self::WithOptions { name, options, optional } => {
+                let mut spec = if options.is_empty() {
+                    URLParamSpec::new(URLParam::from(name))
+                } else {
+                    URLParamSpec::with_options(URLParam::from(name), options)
+                };
+                spec.optional = optional;
+                spec
             }
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Merge)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Merge)]
 struct ProviderConfig {
     #[merge(strategy = overwrite)]
     id: ProviderId,
@@ -132,10 +153,14 @@ fn merge_configs(base: &mut Vec<ProviderConfig>, other: Vec<ProviderConfig>) {
 
 impl From<forge_config::ProviderUrlParam> for UrlParamVarConfig {
     fn from(param: forge_config::ProviderUrlParam) -> Self {
-        if param.options.is_empty() {
+        if param.options.is_empty() && !param.optional {
             UrlParamVarConfig::Plain(param.name)
         } else {
-            UrlParamVarConfig::WithOptions { name: param.name, options: param.options }
+            UrlParamVarConfig::WithOptions {
+                name: param.name,
+                options: param.options,
+                optional: param.optional,
+            }
         }
     }
 }
@@ -175,6 +200,11 @@ impl From<forge_config::ProviderEntry> for ProviderConfig {
             forge_config::ProviderResponseType::OpenCode => ProviderResponse::OpenCode,
         });
 
+        let models = entry.models.map(|m| match m {
+            forge_config::ModelListConfig::Url(url) => Models::Url(url),
+            forge_config::ModelListConfig::Hardcoded(model_list) => Models::Hardcoded(model_list),
+        });
+
         ProviderConfig {
             id: ProviderId::from(entry.id),
             provider_type,
@@ -182,7 +212,7 @@ impl From<forge_config::ProviderEntry> for ProviderConfig {
             url_param_vars: entry.url_param_vars.into_iter().map(Into::into).collect(),
             response_type,
             url: entry.url,
-            models: entry.models.map(Models::Url),
+            models,
             auth_methods,
             custom_headers: entry.custom_headers,
         }
@@ -392,6 +422,11 @@ impl<
                     URLParam::from(name.to_string()),
                     URLParamValue::from(value.to_string()),
                 );
+            } else if env_var.is_optional() {
+                // Optional param absent from env — omit from credential
+                // entirely. `render_url_template` injects null
+                // for absent optional params so `{{#if PARAM}}`
+                // evaluates to false.
             } else {
                 return Err(Error::env_var_not_found(config.id.clone(), name).into());
             }
@@ -556,13 +591,29 @@ impl<
     }
 
     /// Writes credentials to the JSON file
+    ///
+    /// Sets file permissions to 0o600 (user read/write only) on Unix systems
+    /// to prevent other users from reading sensitive credentials.
     async fn write_credentials(&self, credentials: &Vec<AuthCredential>) -> anyhow::Result<()> {
         let path = self.infra.get_environment().credentials_path();
-
         let content = serde_json::to_string_pretty(credentials)?;
         self.infra.write(&path, Bytes::from(content)).await?;
+
+        #[cfg(unix)]
+        set_owner_only_permissions(&path).await?;
+
         Ok(())
     }
+}
+
+/// Restricts a file's permissions to owner read/write only (`0o600`).
+#[cfg(unix)]
+async fn set_owner_only_permissions(path: &std::path::Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = tokio::fs::metadata(path).await?.permissions();
+    perms.set_mode(0o600);
+    tokio::fs::set_permissions(path, perms).await?;
+    Ok(())
 }
 
 #[async_trait::async_trait]
@@ -833,6 +884,294 @@ mod tests {
             "https://integrate.api.nvidia.com/v1/chat/completions"
         );
     }
+
+    #[test]
+    fn test_ambient_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::AMBIENT)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::AMBIENT);
+        assert_eq!(config.api_key_vars, Some("AMBIENT_API_KEY".to_string()));
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://api.ambient.xyz/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_neuralwatt_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::NEURALWATT)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::NEURALWATT);
+        assert_eq!(config.api_key_vars, Some("NEURALWATT_API_KEY".to_string()));
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://api.neuralwatt.com/v1/chat/completions"
+        );
+        // Neuralwatt exposes a non-standard /models schema, so models are
+        // hardcoded in provider.json instead of fetched from the URL.
+        match config.models.as_ref().expect("models should be present") {
+            Models::Hardcoded(models) => {
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "glm-5.2"),
+                    "expected glm-5.2 to be present in hardcoded models"
+                );
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "qwen3.5-397b"),
+                    "expected qwen3.5-397b to be present in hardcoded models"
+                );
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "glm-5.2-flex"),
+                    "expected glm-5.2-flex to be present in hardcoded models"
+                );
+                assert!(
+                    models
+                        .iter()
+                        .any(|m| m.id.as_str() == "kimi-k2.7-code-flex"),
+                    "expected kimi-k2.7-code-flex to be present in hardcoded models"
+                );
+            }
+            other => panic!("expected hardcoded models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_orca_router_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::ORCA_ROUTER)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::ORCA_ROUTER);
+        assert_eq!(config.api_key_vars, Some("ORCAROUTER_API_KEY".to_string()));
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://api.orcarouter.ai/v1/chat/completions"
+        );
+        match config.models.as_ref().expect("models should be present") {
+            Models::Url(model_url) => {
+                assert_eq!(model_url, "https://api.orcarouter.ai/v1/models");
+            }
+            other => panic!("expected URL-driven models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_meta_config() {
+        let configs = get_provider_configs();
+        let config = configs.iter().find(|c| c.id == ProviderId::META).unwrap();
+        assert_eq!(config.id, ProviderId::META);
+        assert_eq!(config.api_key_vars, Some("META_API_KEY".to_string()));
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(
+            config.response_type,
+            Some(ProviderResponse::OpenAIResponses)
+        );
+        assert_eq!(config.url.as_str(), "https://api.meta.ai/v1/responses");
+
+        match config.models.as_ref().expect("models should be present") {
+            Models::Hardcoded(models) => {
+                let model = models
+                    .iter()
+                    .find(|m| m.id.as_str() == "muse-spark-1.1")
+                    .expect("muse-spark-1.1 should be present in hardcoded models");
+                assert_eq!(
+                    model.context_length,
+                    Some(1048576),
+                    "muse-spark-1.1 should have 1048576 context length"
+                );
+                assert_eq!(
+                    model.tools_supported,
+                    Some(true),
+                    "muse-spark-1.1 should support tools"
+                );
+                assert_eq!(
+                    model.supports_parallel_tool_calls,
+                    Some(true),
+                    "muse-spark-1.1 should support parallel tool calls"
+                );
+                assert_eq!(
+                    model.supports_reasoning,
+                    Some(true),
+                    "muse-spark-1.1 should support reasoning"
+                );
+                assert!(
+                    model
+                        .input_modalities
+                        .contains(&forge_app::domain::InputModality::Image),
+                    "muse-spark-1.1 should support image input"
+                );
+            }
+            other => panic!("expected hardcoded models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_alibaba_token_plan_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::ALIBABA_TOKEN_PLAN)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::ALIBABA_TOKEN_PLAN);
+        assert_eq!(
+            config.api_key_vars,
+            Some("ALIBABA_TOKEN_PLAN_API_KEY".to_string())
+        );
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+        );
+        // Alibaba Token Plan exposes an OpenAI-compatible endpoint but no
+        // capability metadata via /models, so models are hardcoded in
+        // provider.json.
+        match config.models.as_ref().expect("models should be present") {
+            Models::Hardcoded(models) => {
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "qwen3.7-max"),
+                    "expected qwen3.7-max to be present in hardcoded models"
+                );
+            }
+            other => panic!("expected hardcoded models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_moonshot_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::MOONSHOT)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::MOONSHOT);
+        assert_eq!(config.api_key_vars, Some("MOONSHOT_API_KEY".to_string()));
+        assert!(config.url_param_vars.is_empty());
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://api.moonshot.ai/v1/chat/completions"
+        );
+        // Moonshot's /models endpoint omits capability metadata (modalities,
+        // reasoning, tool support), so models are hardcoded in provider.json.
+        match config.models.as_ref().expect("models should be present") {
+            Models::Hardcoded(models) => {
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "kimi-k3"),
+                    "expected kimi-k3 to be present in hardcoded models"
+                );
+            }
+            other => panic!("expected hardcoded models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_kimi_coding_config() {
+        let configs = get_provider_configs();
+        let config = configs
+            .iter()
+            .find(|c| c.id == ProviderId::KIMI_CODING)
+            .unwrap();
+        assert_eq!(config.id, ProviderId::KIMI_CODING);
+        assert_eq!(config.api_key_vars, Some("KIMI_API_KEY".to_string()));
+        assert_eq!(config.response_type, Some(ProviderResponse::OpenAI));
+        assert_eq!(
+            config.url.as_str(),
+            "https://api.kimi.com/coding/v1/chat/completions"
+        );
+        // Kimi Code's /models endpoint omits capability metadata, so models are
+        // hardcoded using the platform's canonical model IDs (k3, etc.).
+        match config.models.as_ref().expect("models should be present") {
+            Models::Hardcoded(models) => {
+                assert!(
+                    models.iter().any(|m| m.id.as_str() == "k3"),
+                    "expected k3 to be present in hardcoded models"
+                );
+            }
+            other => panic!("expected hardcoded models, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_provider_entry_with_static_models_converts_to_hardcoded() {
+        let model = forge_domain::Model::new("Qwen3.6-35B-A3b-q3-mlx")
+            .name("Qwen3.5-35B".to_string())
+            .description(
+                "Qwen local reasoning model with advanced problem-solving capabilities".to_string(),
+            )
+            .context_length(262144)
+            .tools_supported(true)
+            .supports_parallel_tool_calls(true)
+            .supports_reasoning(true)
+            .input_modalities(vec![forge_domain::InputModality::Text]);
+
+        let entry = forge_config::ProviderEntry {
+            id: "ollama".to_string(),
+            url: "http://127.0.0.1:8000/v1/chat/completions".to_string(),
+            response_type: Some(forge_config::ProviderResponseType::OpenAI),
+            auth_methods: vec![forge_config::ProviderAuthMethod::ApiKey],
+            models: Some(forge_config::ModelListConfig::Hardcoded(vec![
+                model.clone(),
+            ])),
+            ..Default::default()
+        };
+
+        let actual = ProviderConfig::from(entry);
+
+        let expected = ProviderConfig {
+            id: ProviderId::from("ollama".to_string()),
+            provider_type: forge_domain::ProviderType::Llm,
+            api_key_vars: None,
+            url_param_vars: vec![],
+            response_type: Some(forge_app::domain::ProviderResponse::OpenAI),
+            url: "http://127.0.0.1:8000/v1/chat/completions".to_string(),
+            models: Some(Models::Hardcoded(vec![model])),
+            auth_methods: vec![forge_domain::AuthMethod::ApiKey],
+            custom_headers: None,
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_provider_entry_with_url_models_converts_to_url() {
+        let entry = forge_config::ProviderEntry {
+            id: "my_provider".to_string(),
+            url: "http://example.com/v1/chat/completions".to_string(),
+            models: Some(forge_config::ModelListConfig::Url(
+                "http://example.com/v1/models".to_string(),
+            )),
+            ..Default::default()
+        };
+
+        let actual = ProviderConfig::from(entry);
+
+        let expected = ProviderConfig {
+            id: ProviderId::from("my_provider".to_string()),
+            provider_type: forge_domain::ProviderType::Llm,
+            api_key_vars: None,
+            url_param_vars: vec![],
+            response_type: None,
+            url: "http://example.com/v1/chat/completions".to_string(),
+            models: Some(Models::Url("http://example.com/v1/models".to_string())),
+            auth_methods: vec![forge_domain::AuthMethod::ApiKey],
+            custom_headers: None,
+        };
+
+        assert_eq!(actual, expected);
+    }
 }
 
 #[cfg(test)]
@@ -850,20 +1189,24 @@ mod env_tests {
 
     use super::*;
 
-    // Mock infrastructure that provides environment variables
+    // Mock infrastructure that provides environment variables.
+    // Uses a real temp directory so that file-permission checks work on Unix.
     struct MockInfra {
         env_vars: HashMap<String, String>,
         base_path: PathBuf,
         credentials: tokio::sync::Mutex<Option<Vec<AuthCredential>>>,
+        _tmp: tempfile::TempDir,
     }
 
     impl MockInfra {
         fn new(env_vars: HashMap<String, String>) -> Self {
-            use fake::{Fake, Faker};
+            let tmp = tempfile::TempDir::new().unwrap();
+            let base_path = tmp.path().to_path_buf();
             Self {
                 env_vars,
-                base_path: Faker.fake(),
+                base_path,
                 credentials: tokio::sync::Mutex::new(None),
+                _tmp: tmp,
             }
         }
     }
@@ -939,12 +1282,17 @@ mod env_tests {
     #[async_trait::async_trait]
     impl FileWriterInfra for MockInfra {
         async fn write(&self, path: &std::path::Path, content: Bytes) -> anyhow::Result<()> {
-            // Capture writes to credentials file
+            // Capture writes to credentials file and persist to the real temp dir
+            // so that OS-level permission checks work in tests.
             if path == self.get_environment().credentials_path() {
                 let content_str = String::from_utf8(content.to_vec())?;
                 let creds: Vec<AuthCredential> = serde_json::from_str(&content_str)?;
                 let mut guard = self.credentials.lock().await;
                 *guard = Some(creds);
+                if let Some(parent) = path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                tokio::fs::write(path, content_str).await?;
             }
             Ok(())
         }
@@ -1156,6 +1504,85 @@ mod env_tests {
         assert!(
             credentials.iter().any(|c| c.id == ProviderId::OPENAI),
             "Should have OpenAI credential"
+        );
+    }
+
+    /// Verifies that `.credentials.json` is written with mode 0o600 so that
+    /// group and world cannot read provider API keys.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_credentials_file_has_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let infra = Arc::new(MockInfra::new(HashMap::new()));
+        let registry = ForgeProviderRepository::new(infra.clone());
+
+        registry
+            .upsert_credential(AuthCredential {
+                id: ProviderId::OPENAI,
+                auth_details: AuthDetails::ApiKey(ApiKey::from("sk-test".to_string())),
+                url_params: std::collections::HashMap::new(),
+            })
+            .await
+            .unwrap();
+
+        let path = infra.get_environment().credentials_path();
+        let actual = tokio::fs::metadata(&path)
+            .await
+            .unwrap()
+            .permissions()
+            .mode();
+        let expected = 0o600;
+        assert_eq!(
+            actual & 0o777,
+            expected,
+            "credentials file must be 0o600, got 0o{:o}",
+            actual & 0o777
+        );
+    }
+
+    /// Verifies that an existing credentials file with overly broad permissions
+    /// (e.g. 0o644) is tightened to 0o600 when credentials are updated.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_credentials_file_permissions_corrected_on_update() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let infra = Arc::new(MockInfra::new(HashMap::new()));
+        let registry = ForgeProviderRepository::new(infra.clone());
+
+        let credential = AuthCredential {
+            id: ProviderId::OPENAI,
+            auth_details: AuthDetails::ApiKey(ApiKey::from("sk-test".to_string())),
+            url_params: std::collections::HashMap::new(),
+        };
+
+        // First write — establishes the file
+        registry
+            .upsert_credential(credential.clone())
+            .await
+            .unwrap();
+
+        // Simulate a pre-existing file with world-readable permissions
+        let path = infra.get_environment().credentials_path();
+        let mut perms = tokio::fs::metadata(&path).await.unwrap().permissions();
+        perms.set_mode(0o644);
+        tokio::fs::set_permissions(&path, perms).await.unwrap();
+
+        // Second write — must correct the insecure permissions
+        registry.upsert_credential(credential).await.unwrap();
+
+        let actual = tokio::fs::metadata(&path)
+            .await
+            .unwrap()
+            .permissions()
+            .mode();
+        let expected = 0o600;
+        assert_eq!(
+            actual & 0o777,
+            expected,
+            "credentials file must be corrected to 0o600, got 0o{:o}",
+            actual & 0o777
         );
     }
 
@@ -1745,5 +2172,50 @@ mod env_tests {
             .iter()
             .find(|c| c.id == ProviderId::OPEN_ROUTER);
         assert!(openrouter_config.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_vllm_port_is_optional() {
+        let configs = get_provider_configs();
+        let vllm_id = ProviderId::from("vllm".to_string());
+        let config = configs.iter().find(|c| c.id == vllm_id).unwrap();
+
+        let port_param = config
+            .url_param_vars
+            .iter()
+            .find(|v| v.param_name() == "VLLM_PORT")
+            .unwrap();
+
+        assert!(port_param.is_optional(), "VLLM_PORT should be optional");
+    }
+
+    #[tokio::test]
+    async fn test_vllm_migration_without_port() {
+        // vLLM behind a reverse proxy — no port needed
+        let mut env_vars = HashMap::new();
+        env_vars.insert("VLLM_API_KEY".to_string(), "vllm-key".to_string());
+        env_vars.insert("VLLM_HOST".to_string(), "my.server.url".to_string());
+        env_vars.insert("VLLM_SSL_SCHEME".to_string(), "https".to_string());
+        // VLLM_PORT intentionally absent
+
+        let infra = Arc::new(MockInfra::new(env_vars));
+        let registry = ForgeProviderRepository::new(infra.clone());
+
+        registry.migrate_env_to_file().await.unwrap();
+
+        let credentials = infra.credentials.lock().await;
+        let creds = credentials.as_ref().unwrap();
+
+        let vllm_id = ProviderId::from("vllm".to_string());
+        let vllm_cred = creds.iter().find(|c| c.id == vllm_id).unwrap();
+
+        // Optional absent param should not be stored in the credential at all.
+        // `render_url_template` handles the absent key by injecting null.
+        assert!(
+            !vllm_cred
+                .url_params
+                .contains_key(&URLParam::from("VLLM_PORT".to_string())),
+            "VLLM_PORT should be absent from credential when not provided"
+        );
     }
 }

@@ -209,6 +209,12 @@ IMPORTANT: This tool only handles text-based content (HTML, JSON, XML, plain tex
 
 ---
 
+### websearch
+
+Searches the public web through SerpApi-backed Google results and returns a normalized summary of search findings. Use this when the user needs current web information, recent facts, or external references that are better answered from search results than by directly fetching a known URL. Default to `mode: "light"` because it is faster and returns the core web results; use `mode: "standard"` only when richer Google result features are needed, such as answer boxes, richer knowledge graph data, top stories, or when light results are insufficient. This tool requires a configured `SERPAPI_API_KEY`, only searches public web content, and returns summarized structured results rather than full page bodies.
+
+---
+
 ### followup
 
 Use this tool when you encounter ambiguities, need clarification, or require more details to proceed effectively. Use this tool judiciously to maintain a balance between gathering necessary information and avoiding excessive back-and-forth.

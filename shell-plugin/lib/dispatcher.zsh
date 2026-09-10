@@ -127,9 +127,6 @@ function forge-accept-line() {
     # Add the original command to history before transformation
     print -s -- "$original_buffer"
     
-    # CRITICAL: Move cursor to end so output doesn't overwrite
-    # Don't clear BUFFER yet - let _forge_reset do that after action completes
-    # This keeps buffer state consistent if Ctrl+C is pressed
     CURSOR=${#BUFFER}
     zle redisplay
     
@@ -180,6 +177,9 @@ function forge-accept-line() {
         ;;
         conversation|c)
             _forge_action_conversation "$input_text"
+        ;;
+        conversation-tree|ct)
+            _forge_action_conversation_tree
         ;;
         config-model|cm)
             _forge_action_model "$input_text"

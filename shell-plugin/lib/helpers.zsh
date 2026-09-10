@@ -11,11 +11,6 @@ function _forge_get_commands() {
     echo "$_FORGE_COMMANDS"
 }
 
-# Private fzf function with common options for consistent UX
-function _forge_fzf() {
-    fzf --reverse --exact --cycle --select-1 --height 80% --no-scrollbar --ansi --color="header:bold" "$@"
-}
-
 # Helper function to execute forge commands consistently
 # This ensures proper handling of special characters and consistent output
 function _forge_exec() {
@@ -49,7 +44,7 @@ function _forge_exec() {
 }
 
 # Like _forge_exec but connects stdin/stdout to /dev/tty so that interactive
-# prompts (rustyline, fzf, etc.) work correctly when forge is launched as a
+# prompts (rustyline, nucleo-picker, etc.) work correctly when forge is launched as a
 # child of a ZLE widget. ZLE owns the terminal and replaces the process's
 # stdin/stdout with its own pipes, so without this redirect any readline
 # library would see a non-tty stdin and return EOF immediately.
@@ -82,55 +77,83 @@ function _forge_exec_interactive() {
     "${cmd[@]}" </dev/tty >/dev/tty
 }
 
+function _forge_select() {
+    [[ -n "$_FORGE_SESSION_MODEL" ]] && local -x FORGE_SESSION__MODEL_ID="$_FORGE_SESSION_MODEL"
+    [[ -n "$_FORGE_SESSION_PROVIDER" ]] && local -x FORGE_SESSION__PROVIDER_ID="$_FORGE_SESSION_PROVIDER"
+    [[ -n "$_FORGE_SESSION_REASONING_EFFORT" ]] && local -x FORGE_REASONING__EFFORT="$_FORGE_SESSION_REASONING_EFFORT"
+    CLICOLOR_FORCE=0 $_FORGE_BIN select "$@" </dev/tty 2>/dev/tty
+}
+
+function _forge_select_global() {
+    CLICOLOR_FORCE=0 $_FORGE_BIN select "$@" </dev/tty 2>/dev/tty
+}
+
+function _forge_select_with_query() {
+    local query="$1"
+    shift
+
+    if [[ -n "$query" ]]; then
+        _forge_select "$@" --query "$query"
+    else
+        _forge_select "$@"
+    fi
+}
+
+function _forge_select_with_query_global() {
+    local query="$1"
+    shift
+
+    if [[ -n "$query" ]]; then
+        _forge_select_global "$@" --query "$query"
+    else
+        _forge_select_global "$@"
+    fi
+}
+
+function _forge_select_model_pair() {
+    local result
+    result=$(_forge_select_with_query "$1" model)
+
+    if [[ -z "$result" ]]; then
+        reply=()
+        return 1
+    fi
+
+    reply=("${(@f)result}")
+    [[ ${#reply[@]} -ge 2 ]]
+}
+
+function _forge_select_model_pair_global() {
+    local result
+    result=$(_forge_select_with_query_global "$1" model)
+
+    if [[ -z "$result" ]]; then
+        reply=()
+        return 1
+    fi
+
+    reply=("${(@f)result}")
+    [[ ${#reply[@]} -ge 2 ]]
+}
+
 function _forge_reset() {
+  # Print newlines equal to the current buffer display line count so that
+  # ZLE's zrefresh() clears these padding lines instead of conversation
+  # output. When BUFFER spans multiple display lines (newlines or terminal
+  # wrap), ZLE tracks the multi-line state internally (olnct). On
+  # reset-prompt, zrefresh() compares olnct (old multi-line count) against
+  # nlnct (new count after clearing) and clears the delta lines. By
+  # printing padding here, the cleared lines are blank ones we inserted
+  # rather than the forge conversation output that precedes them.
+  local pad="${BUFFERLINES:-1}" _i
+  for ((_i=1; _i<pad; _i++)); do print; done
+
   # Clear buffer and reset cursor position
   BUFFER=""
   CURSOR=0
   # Force widget redraw and prompt reset
   zle -I
   zle reset-prompt
-}
-
-# Helper function to find the index of a value in a list (1-based)
-# Returns the index if found, 1 otherwise
-# Usage: _forge_find_index <output> <value_to_find> [field_number] [field_number2] [value_to_find2]
-# field_number: which porcelain column to compare (1-based, using multi-space delimiter)
-# field_number2/value_to_find2: optional second column+value for compound matching
-# Note: This function expects porcelain output WITH headers and skips the header line
-function _forge_find_index() {
-    local output="$1"
-    local value_to_find="$2"
-    local field_number="${3:-1}"
-    local field_number2="${4:-}"
-    local value_to_find2="${5:-}"
-
-    local index=1
-    local line_num=0
-    while IFS= read -r line; do
-        ((line_num++))
-        # Skip the header line (first line)
-        if [[ $line_num -eq 1 ]]; then
-            continue
-        fi
-        
-        local field_value=$(echo "$line" | awk -F '  +' "{print \$$field_number}")
-        if [[ "$field_value" == "$value_to_find" ]]; then
-            if [[ -n "$field_number2" && -n "$value_to_find2" ]]; then
-                local field_value2=$(echo "$line" | awk -F '  +' "{print \$$field_number2}")
-                if [[ "$field_value2" == "$value_to_find2" ]]; then
-                    echo "$index"
-                    return 0
-                fi
-            else
-                echo "$index"
-                return 0
-            fi
-        fi
-        ((index++))
-    done <<< "$output"
-
-    echo "1"
-    return 0
 }
 
 # Helper function to print messages with consistent formatting based on log level
