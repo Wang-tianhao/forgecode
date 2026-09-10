@@ -1809,6 +1809,80 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_chat_repository_routes_copilot_grok_to_responses() {
+        for (provider_id, model, path, input_field, event) in [
+            (
+                ProviderId::GITHUB_COPILOT,
+                "grok-4.6",
+                "/v1/responses",
+                "input",
+                serde_json::json!({
+                    "type": "response.output_text.delta",
+                    "sequence_number": 1,
+                    "item_id": "item_1",
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": "hello"
+                }),
+            ),
+            (
+                ProviderId::XAI,
+                "grok-4.6",
+                "/chat/completions",
+                "messages",
+                serde_json::json!({"id": "chat_1", "choices": [{"index": 0, "delta": {"content": "hello"}}]}),
+            ),
+            (
+                ProviderId::GITHUB_COPILOT,
+                "gpt-4o",
+                "/chat/completions",
+                "messages",
+                serde_json::json!({"id": "chat_1", "choices": [{"index": 0, "delta": {"content": "hello"}}]}),
+            ),
+        ] {
+            let mut fixture = mockito::Server::new_async().await;
+            let mock = fixture
+                .mock("POST", path)
+                .match_header("authorization", "Bearer test-api-key")
+                .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                    "model": model,
+                    "stream": true,
+                    (input_field): [{"role": "user"}]
+                })))
+                .with_header("content-type", "text/event-stream")
+                .with_body(format!("data: {event}\n\ndata: [DONE]\n\n"))
+                .create_async()
+                .await;
+            let mut provider = openai_responses(
+                "test-api-key",
+                &format!("{}/chat/completions", fixture.url()),
+            );
+            provider.id = provider_id;
+            let repo = crate::provider::ForgeChatRepository::new(Arc::new(MockHttpClient {
+                client: reqwest::Client::new(),
+            }));
+            let context = ChatContext::default()
+                .add_message(ContextMessage::user("Hi", None))
+                .stream(true);
+
+            let mut stream = repo
+                .chat(&ModelId::new(model), context, provider)
+                .await
+                .unwrap();
+            let mut actual = Vec::new();
+            while let Some(message) = stream.next().await {
+                if let Some(content) = message.unwrap().content {
+                    actual.push(content);
+                }
+            }
+
+            let expected = vec![Content::part("hello")];
+            assert_eq!(actual, expected);
+            mock.assert_async().await;
+        }
+    }
+
     /// Tests the Codex direct streaming path (`chat_codex_stream`) which
     /// bypasses the Content-Type validation enforced by reqwest-eventsource.
     /// The mock server returns SSE data with `Content-Type:

@@ -146,8 +146,11 @@ impl<F: HttpInfra + EnvironmentInfra<Config = forge_config::ForgeConfig> + Sync>
                         || provider.id == ProviderId::CODEX)
                 {
                     self.codex_repo.chat(model_id, context, provider).await
-                } else if provider.id == ProviderId::CODEX {
-                    // All Codex provider models use the Responses API
+                } else if provider.id == ProviderId::CODEX
+                    || (provider.id == ProviderId::GITHUB_COPILOT
+                        && model_id.as_str() == "grok-4.6")
+                {
+                    // All Codex models and Copilot's Grok 4.6 require the Responses API.
                     self.codex_repo.chat(model_id, context, provider).await
                 } else {
                     self.openai_repo.chat(model_id, context, provider).await
