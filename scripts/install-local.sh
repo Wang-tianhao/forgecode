@@ -23,7 +23,7 @@
 #   DEST_DIR=/usr/local/bin scripts/install-local.sh
 #   SKIP_BUILD=1 scripts/install-local.sh       # assume target/release/forge exists
 #   APP_VERSION=v2.12.7 scripts/install-local.sh
-#   FORK_LABEL=wang scripts/install-local.sh   # version becomes 2.12.7-wang
+#   FORK_VERSION=1.2.0 scripts/install-local.sh # version becomes 2.12.7-wang.1.2.0
 #   GITHUB_REPO=Wang-tianhao/forgecode scripts/install-local.sh --download
 #
 # Safe to re-run; each invocation re-signs after copy.
@@ -41,14 +41,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Resolve version: explicit APP_VERSION > latest upstream tag > fallback
 # ------------------------------------------------------------------
 if [[ -z "${APP_VERSION:-}" ]]; then
+    UPSTREAM_TAG=""
     # Fetch upstream tags if the remote exists
     if git -C "$REPO_ROOT" remote get-url upstream &>/dev/null; then
         git -C "$REPO_ROOT" fetch upstream --tags --quiet 2>/dev/null || true
-        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 upstream/main 2>/dev/null || true)"
+        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --match 'v[0-9]*' --exclude '*-*' --abbrev=0 upstream/main 2>/dev/null || true)"
     fi
     # Fall back to the latest tag reachable from HEAD
     if [[ -z "$UPSTREAM_TAG" ]]; then
-        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+        UPSTREAM_TAG="$(git -C "$REPO_ROOT" describe --tags --match 'v[0-9]*' --exclude '*-*' --abbrev=0 HEAD 2>/dev/null || true)"
     fi
     if [[ -n "$UPSTREAM_TAG" ]]; then
         APP_VERSION="$UPSTREAM_TAG"
@@ -57,6 +58,7 @@ if [[ -z "${APP_VERSION:-}" ]]; then
     fi
 fi
 
+APP_VERSION="$(bash "$REPO_ROOT/scripts/fork-version.sh" "$APP_VERSION")"
 echo "==> version: $APP_VERSION"
 
 DEST_BIN="$DEST_DIR/$BIN_NAME"
@@ -127,7 +129,7 @@ SRC_BIN="$REPO_ROOT/target/$TARGET_SUBDIR/$BIN_NAME"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     echo "==> cargo build ${CARGO_FLAGS[*]} --bin $BIN_NAME"
-    ( cd "$REPO_ROOT" && APP_VERSION="$APP_VERSION" FORK_LABEL="${FORK_LABEL-wang}" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
+    ( cd "$REPO_ROOT" && APP_VERSION="$APP_VERSION" FORK_LABEL="" cargo build "${CARGO_FLAGS[@]}" --bin "$BIN_NAME" )
 fi
 
 if [[ ! -x "$SRC_BIN" ]]; then

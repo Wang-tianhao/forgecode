@@ -54,27 +54,47 @@ custom code lives on **`wang/main`**; `main` stays synced with upstream.
 
 ### How to publish a new release
 
+Fork versions use `UPSTREAM-wang.MAJOR.MINOR.PATCH`, for example
+`2.13.21-wang.1.0.0` (Git tag: `v2.13.21-wang.1.0.0`). The root
+`FORK_VERSION` file owns the fork version, starting at `1.0.0`. Increment
+patch for fixes, minor for backward-compatible features, and major for
+breaking fork changes. Keep the fork version when updating upstream; do not
+reset it. Cargo crate versions remain unchanged.
+
+Both install scripts combine the latest reachable stable upstream tag with
+`FORK_VERSION`. Fork tags are excluded from upstream discovery. Override
+`FORK_VERSION` for a one-off build, or pass an exact combined `APP_VERSION`
+to `install-local.sh` to build/download an older release without relabeling
+it. `FORK_LABEL=` disables the suffix. For direct Cargo builds, pass the
+complete tag as `APP_VERSION` and leave `FORK_LABEL` unset.
+
+The suffix uses SemVer prerelease syntax so fork increments sort numerically
+(including `1.0.9` → `1.0.10`); `+wang.1.0.0` would be build metadata and
+would not affect update ordering. Publish fork tags as regular GitHub releases,
+not prereleases, so the updater's latest-release endpoint finds them. The first
+migration from a bare upstream version needs a local install or manual download:
+SemVer considers a bare `2.13.21` newer than `2.13.21-wang.1.0.0`.
+
 ```bash
-# 1. Make changes on wang/main and push
+# 1. Update FORK_VERSION, commit changes on wang/main, then push
 git push origin wang/main
 
 # 2. Create a GitHub release (may auto-trigger the workflow)
-gh release create v0.1.0-custom.N \
-  --title "v0.1.0-custom.N" \
+TAG=$(bash scripts/fork-version.sh v2.13.21)
+gh release create "$TAG" \
+  --title "$TAG" \
   --notes "What changed" \
   --target wang/main
 
 # 3. If the workflow didn't auto-trigger, run it manually:
-gh workflow run release.yml --ref wang/main -f tag=v0.1.0-custom.N
+gh workflow run release.yml --ref wang/main -f tag="$TAG"
 ```
 
 ### How to download on a workstation
 
 ```bash
 # macOS Apple Silicon (M-series)
-curl -fLo ~/.local/bin/forge \
-  https://github.com/Wang-tianhao/forgecode/releases/download/v0.1.0-custom.N/forge-aarch64-apple-darwin
-chmod +x ~/.local/bin/forge
+APP_VERSION=v2.13.21-wang.1.0.0 scripts/install-local.sh --download
 ```
 
 ### Syncing `main` with upstream

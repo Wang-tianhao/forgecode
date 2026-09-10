@@ -173,7 +173,7 @@ pub async fn on_update(api: Arc<impl API>, update: Option<&Update>) {
     }
 
     // Check the fork's releases: a prompt only appears once a downloadable
-    // custom build has been published for a new upstream version.
+    // custom build has been published for a new upstream or fork version.
     let informer = update_informer::new(registry::GitHub, FORK_REPO, VERSION)
         .interval(frequency.into());
 
@@ -246,12 +246,14 @@ mod tests {
 
     #[test]
     fn test_download_command_targets_fork_release_and_current_exe() {
-        let fixture = "2.13.21";
+        let fixture = "2.13.21-wang.1.2.3";
 
         let actual = download_command(fixture).unwrap();
 
         let exe = std::env::current_exe().unwrap();
-        assert!(actual.contains(&format!("github.com/{FORK_REPO}/releases/download/v2.13.21/")));
+        assert!(actual.contains(&format!(
+            "github.com/{FORK_REPO}/releases/download/v2.13.21-wang.1.2.3/"
+        )));
         assert!(actual.contains(&asset_name()));
         assert!(actual.contains(&exe.display().to_string()));
         assert!(actual.contains("codesign"));
