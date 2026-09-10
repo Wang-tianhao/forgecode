@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use forge_domain::{AgentId, ConversationId, Effort, ModelId, ProviderId};
 
 #[derive(Parser)]
-#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(version = crate::VERSION)]
 pub struct Cli {
     /// Direct prompt to process without entering interactive mode.
     ///

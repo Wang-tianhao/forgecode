@@ -34,5 +34,8 @@ pub use sandbox::Sandbox;
 pub use title_display::*;
 pub use ui::UI;
 
+/// Complete build version shared by CLI displays and update comparisons.
+pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub static TRACKER: LazyLock<forge_tracker::Tracker> =
     LazyLock::new(forge_tracker::Tracker::default);

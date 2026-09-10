@@ -4,8 +4,9 @@ use colored::Colorize;
 use forge_api::API;
 use forge_config::{Update, UpdateFrequency};
 use forge_select::ForgeWidget;
-use forge_tracker::VERSION;
 use update_informer::{Check, Version, registry};
+
+use crate::VERSION;
 
 /// GitHub repository that hosts this fork's releases. This is the
 /// distribution channel for custom builds: `forge update` checks it for new
@@ -30,7 +31,11 @@ fn asset_name() -> String {
 /// Normalizes a version string into a git tag by ensuring it has a 'v'
 /// prefix, matching the tags created by `scripts/forge-update.sh`.
 fn release_tag(version: &str) -> String {
-    if version.starts_with('v') { version.to_string() } else { format!("v{version}") }
+    if version.starts_with('v') {
+        version.to_string()
+    } else {
+        format!("v{version}")
+    }
 }
 
 /// Builds a shell command that downloads the pre-built binary for the current
@@ -150,6 +155,44 @@ fn should_check_for_updates(frequency: &UpdateFrequency) -> bool {
     !matches!(frequency, UpdateFrequency::Never)
 }
 
+/// Compares upstream versions first, then numeric fork versions. Bare upstream
+/// releases and unversioned legacy fork builds are never update targets.
+fn is_newer_fork_release(current: &str, candidate: &str) -> bool {
+    let Ok(current) = semver::Version::parse(current.strip_prefix('v').unwrap_or(current)) else {
+        return false;
+    };
+    let Ok(candidate) = semver::Version::parse(candidate.strip_prefix('v').unwrap_or(candidate))
+    else {
+        return false;
+    };
+    let Some(candidate_fork) = candidate.pre.as_str().strip_prefix("wang.") else {
+        return false;
+    };
+    let current_fork = match current.pre.as_str() {
+        "" | "wang" => "0.0.0",
+        prerelease => match prerelease.strip_prefix("wang.") {
+            Some(version) => version,
+            None => return false,
+        },
+    };
+    let (Ok(current_fork), Ok(candidate_fork)) = (
+        semver::Version::parse(current_fork),
+        semver::Version::parse(candidate_fork),
+    ) else {
+        return false;
+    };
+    if !current_fork.pre.is_empty() || !candidate_fork.pre.is_empty() {
+        return false;
+    }
+
+    (
+        candidate.major,
+        candidate.minor,
+        candidate.patch,
+        candidate_fork,
+    ) > (current.major, current.minor, current.patch, current_fork)
+}
+
 /// Checks if there is an update available
 pub async fn on_update(api: Arc<impl API>, update: Option<&Update>) {
     let update = update.cloned().unwrap_or_default();
@@ -170,10 +213,14 @@ pub async fn on_update(api: Arc<impl API>, update: Option<&Update>) {
 
     // Check the fork's releases: a prompt only appears once a downloadable
     // custom build has been published for a new upstream or fork version.
-    let informer = update_informer::new(registry::GitHub, FORK_REPO, VERSION)
-        .interval(frequency.into());
+    // Let our fork-aware comparison decide whether the latest/cached release is
+    // newer. SemVer alone ranks 2.13.21 above 2.13.21-wang.1.1.0 and would also
+    // hide valid migrations from a bare upstream build to a versioned fork.
+    let informer =
+        update_informer::new(registry::GitHub, FORK_REPO, "0.0.0").interval(frequency.into());
 
     if let Some(version) = informer.check_version().ok().flatten()
+        && is_newer_fork_release(VERSION, &version.to_string())
         && (auto_update || confirm_update(version.clone()).await)
     {
         execute_update_command(api, auto_update, version).await;
@@ -192,6 +239,34 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_fork_release_ordering() {
+        let fixtures = [
+            ("2.13.21-wang.1.1.0", "v2.13.21", false),
+            ("2.13.21-wang.1.1.0", "2.14.0", false),
+            ("2.13.21-wang.1.1.0", "2.13.21-wang", false),
+            ("2.13.21-wang.1.1.0", "2.13.21-wang.1.0.0", false),
+            ("2.13.21-wang.1.1.0", "2.13.21-wang.1.1.0", false),
+            ("v2.13.21-wang.1.1.0", "v2.13.21-wang.1.1.1", true),
+            ("2.13.21-wang.1.1.9", "2.13.21-wang.1.1.10", true),
+            ("2.13.21-wang.1.1.10", "2.13.21-wang.1.1.9", false),
+            ("2.13.21-wang.2.0.0", "2.14.0-wang.1.0.0", true),
+            ("2.13.21-wang.1.0.0", "2.13.20-wang.9.0.0", false),
+            ("2.13.21", "2.13.21-wang.1.1.1", true),
+            ("2.13.21-wang", "2.13.21-wang.1.1.1", true),
+            ("2.13.21-wang.1.1.0", "2.13.21-other.2.0.0", false),
+            ("2.13.21-other.1.0.0", "2.13.21-wang.1.1.1", false),
+            ("2.13.21-wang.1.1.0", "2.13.21-wang.1.2", false),
+            ("2.13.21-wang.1.1.0", "2.13.21-wang.1.2.0-beta", false),
+            ("invalid", "2.13.21-wang.1.1.1", false),
+            ("2.13.21-wang.1.1.0", "invalid", false),
+        ];
+        for (current, candidate, expected) in fixtures {
+            let actual = is_newer_fork_release(current, candidate);
+            assert_eq!(actual, expected, "{current} -> {candidate}");
+        }
+    }
 
     #[test]
     fn test_should_skip_update_check_when_frequency_is_never() {
